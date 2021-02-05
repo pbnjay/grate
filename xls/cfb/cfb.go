@@ -292,7 +292,7 @@ func (d *doc) getStreamReader(sid uint32, size uint64) io.Reader {
 		panic("incomplete read")
 	}
 
-	return &sliceReader{data: streamData, offset: 0}
+	return &SliceReader{Data: streamData}
 }
 
 func (d *doc) getMiniStreamReader(sid uint32, size uint64) io.Reader {
@@ -341,5 +341,5 @@ func (d *doc) getMiniStreamReader(sid uint32, size uint64) io.Reader {
 		sid = d.minifat[sid]
 	}
 
-	return &sliceReader{data: streamData, offset: 0}
+	return &SliceReader{Data: streamData}
 }

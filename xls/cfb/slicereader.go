@@ -1,25 +1,28 @@
 package cfb
 
-import "io"
+import (
+	"io"
+)
 
-type sliceReader struct {
-	data   [][]byte
-	offset uint
+type SliceReader struct {
+	Data   [][]byte
+	Index  uint
+	Offset uint
 }
 
-func (s *sliceReader) Read(b []byte) (int, error) {
-	var err error
-	if s.offset >= uint(len(s.data)) {
+func (s *SliceReader) Read(b []byte) (int, error) {
+	if s.Index >= uint(len(s.Data)) {
 		return 0, io.EOF
 	}
-	if len(b) < len(s.data[s.offset]) {
-		return 0, io.ErrShortBuffer
+	n := copy(b, s.Data[s.Index][s.Offset:])
+	if n > 0 {
+		s.Offset += uint(n)
+		if s.Offset == uint(len(s.Data[s.Index])) {
+			s.Offset = 0
+			s.Index++
+		}
+		return n, nil
 	}
 
-	n := copy(b, s.data[s.offset])
-	if n == 0 {
-		err = io.EOF
-	}
-	s.offset++
-	return n, err
+	return 0, io.EOF
 }

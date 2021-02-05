@@ -9,7 +9,7 @@ import (
 
 func TestHeader(t *testing.T) {
 	d := &doc{}
-	f, _ := os.Open("test.xls")
+	f, _ := os.Open("../testdata/test.xls")
 	err := d.load(f)
 	if err != nil {
 		t.Fatal(err)
@@ -18,7 +18,7 @@ func TestHeader(t *testing.T) {
 
 func TestHeader2(t *testing.T) {
 	d := &doc{}
-	f, _ := os.Open("test2.xls")
+	f, _ := os.Open("../testdata/test2.xls")
 	err := d.load(f)
 	if err != nil {
 		t.Fatal(err)
@@ -27,7 +27,7 @@ func TestHeader2(t *testing.T) {
 
 func TestHeader3(t *testing.T) {
 	d := &doc{}
-	f, _ := os.Open("test3.xls")
+	f, _ := os.Open("../testdata/test3.xls")
 	err := d.load(f)
 	if err != nil {
 		t.Fatal(err)
@@ -36,7 +36,7 @@ func TestHeader3(t *testing.T) {
 
 func TestHeader4(t *testing.T) {
 	d := &doc{}
-	f, _ := os.Open("test4.xls")
+	f, _ := os.Open("../testdata/test4.xls")
 	err := d.load(f)
 	if err != nil {
 		t.Fatal(err)
