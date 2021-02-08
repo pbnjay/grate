@@ -12,6 +12,7 @@ import (
 	"errors"
 	"io"
 	"io/ioutil"
+	"log"
 	"unicode/utf16"
 )
 
@@ -122,7 +123,8 @@ func (d *doc) load(rx io.ReadSeeker) error {
 			panic("unknown major version")
 		}
 		if h.MinorVersion != 0x3E {
-			panic("unknown minor version")
+			log.Printf("WARNING MinorVersion = 0x%02x NOT 0x3E", h.MinorVersion)
+			//panic("unknown minor version")
 		}
 
 		for _, v := range h.Reserved1 {
@@ -186,6 +188,9 @@ func (d *doc) load(rx io.ReadSeeker) error {
 				}
 
 				offs := int64(1+sid2) << int32(h.SectorShift)
+				if offs > int64(len(d.data)) {
+					return errors.New("xls/cfb: unable to load file")
+				}
 				sector := d.data[offs:]
 				for j := 0; j < numFATentries; j++ {
 					sid3 := le.Uint32(sector)
@@ -246,7 +251,7 @@ func (d *doc) buildDirs(br *bytes.Reader) error {
 			d.ministreamstart = uint32(dirent.StartingSectorLocation)
 			d.ministreamsize = uint32(dirent.StreamSize)
 		case typeStorage:
-			panic("got a storage? what to do now?")
+			//log.Println("got a storage? what to do now?")
 		case typeStream:
 			/*
 				var freader io.Reader

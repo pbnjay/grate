@@ -23,6 +23,7 @@ type WorkBook struct {
 	ctx      context.Context
 	doc      cfb.Document
 
+	prot     bool
 	h        *header
 	sheets   []*boundSheet
 	codepage uint16
@@ -34,8 +35,10 @@ type WorkBook struct {
 
 	fpos          int64
 	pos2substream map[int64]int
+}
 
-	decryptors map[int]crypto.Decryptor
+func (b *WorkBook) IsProtected() bool {
+	return b.prot
 }
 
 func Open(ctx context.Context, filename string) (*WorkBook, error) {
@@ -56,33 +59,134 @@ func Open(ctx context.Context, filename string) (*WorkBook, error) {
 	if err != nil {
 		return nil, err
 	}
-	//br := bufio.NewReader(rdr)
 	err = b.loadFromStream(rdr)
 	return b, err
 }
 
-func (b *WorkBook) loadFromStream(r io.Reader) error {
-	b.decryptors = make(map[int]crypto.Decryptor)
+func (b *WorkBook) loadFromStream(r io.ReadSeeker) error {
+	return b.loadFromStream2(r, false)
+}
+
+func (b *WorkBook) loadFromStreamWithDecryptor(r io.ReadSeeker, dec crypto.Decryptor) error {
+	_, err := r.Seek(0, io.SeekStart)
+	if err != nil {
+		log.Println("xls: dec-seek1 failed")
+		return err
+	}
+
+	zeros := [8224]byte{}
+
+	type overlay struct {
+		Pos int64
+
+		RecType   recordType
+		DataBytes uint16
+		Data      []byte // NB len() not necessarily = DataBytes
+	}
+	replaceBlocks := []overlay{}
+
+	obuf := &bytes.Buffer{}
+	for err == nil {
+		o := overlay{}
+		o.Pos, _ = r.Seek(0, io.SeekCurrent)
+
+		err = binary.Read(r, binary.LittleEndian, &o.RecType)
+		if err != nil {
+			if err == io.EOF {
+				continue
+			}
+			log.Println("xls: dec-read1 failed")
+			return err
+		}
+
+		err = binary.Read(r, binary.LittleEndian, &o.DataBytes)
+		if err != nil {
+			log.Println("xls: dec-read2 failed")
+			return err
+		}
+
+		// copy to output and decryption stream
+		binary.Write(dec, binary.LittleEndian, o.RecType)
+		binary.Write(dec, binary.LittleEndian, o.DataBytes)
+		tocopy := int(o.DataBytes)
+
+		switch o.RecType {
+		case RecTypeBOF, RecTypeFilePass, RecTypeUsrExcl, RecTypeFileLock, RecTypeInterfaceHdr, RecTypeRRDInfo, RecTypeRRDHead:
+			// copy original data into output
+			o.Data = make([]byte, o.DataBytes)
+			_, err = io.ReadFull(r, o.Data)
+			if err != nil {
+				log.Println("FAIL err", err)
+			}
+			dec.Write(zeros[:int(o.DataBytes)])
+			tocopy = 0
+
+		case RecTypeBoundSheet8:
+			// copy 32-bit position to output
+			o.Data = make([]byte, 4)
+			_, err = io.ReadFull(r, o.Data)
+			if err != nil {
+				log.Println("FAIL err", err)
+			}
+			dec.Write(zeros[:4])
+			tocopy -= 4
+		}
+
+		if tocopy > 0 {
+			_, err = io.CopyN(dec, r, int64(tocopy))
+		}
+		replaceBlocks = append(replaceBlocks, o)
+	}
+	dec.Flush()
+	io.Copy(obuf, dec)
+
+	alldata := obuf.Bytes()
+	for _, o := range replaceBlocks {
+		offs := int(o.Pos)
+		binary.LittleEndian.PutUint16(alldata[offs:], uint16(o.RecType))
+		binary.LittleEndian.PutUint16(alldata[offs+2:], uint16(o.DataBytes))
+		if len(o.Data) > 0 {
+			offs += 4
+			copy(alldata[offs:], o.Data)
+		}
+	}
+
+	return b.loadFromStream2(bytes.NewReader(alldata), true)
+}
+
+func (b *WorkBook) loadFromStream2(r io.ReadSeeker, isDecrypted bool) error {
 	b.h = &header{}
 	substr := -1
+	nestedBOF := 0
+	b.substreams = b.substreams[:0]
+	b.pos2substream = make(map[int64]int, 10)
+	b.fpos = 0
 	nr, err := b.nextRecord(r)
 	for err == nil {
-		if nr.RecType == RecTypeBOF {
-			substr++
-			b.substreams = append(b.substreams, []*rec{})
-			b.pos2substream[b.fpos] = substr
+		switch nr.RecType {
+		case RecTypeEOF:
+			nestedBOF--
+		case RecTypeBOF:
+			// when substreams are nested, keep them in the same grouping
+			if nestedBOF == 0 {
+				substr = len(b.substreams)
+				b.substreams = append(b.substreams, []*rec{})
+				b.pos2substream[b.fpos] = substr
+			}
+			nestedBOF++
 		}
 		b.fpos += int64(4 + len(nr.Data))
 
-		if nr.RecType == RecTypeFilePass {
+		if nr.RecType == RecTypeFilePass && !isDecrypted {
 			etype := binary.LittleEndian.Uint16(nr.Data)
 			switch etype {
 			case 1:
-				b.decryptors[substr], err = crypto.NewBasicRC4(nr.Data[2:])
+				dec, err := crypto.NewBasicRC4(nr.Data[2:])
 				if err != nil {
 					log.Println("xls: rc4 encryption failed to set up", err)
 					return err
 				}
+				return b.loadFromStreamWithDecryptor(r, dec)
 			case 2, 3, 4:
 				log.Println("need Crypto API RC4 decryptor")
 				return errors.New("xls: unsupported Crypto API encryption method")
@@ -101,60 +205,13 @@ func (b *WorkBook) loadFromStream(r io.Reader) error {
 		return err
 	}
 
-	for ss, records := range b.substreams {
-		log.Printf("Processing substream %d/%d (%d records)", ss, len(b.substreams), len(records))
-
-		if dec, ok := b.decryptors[ss]; ok {
-			log.Printf("Decrypting substream...")
-
-			dec.Reset()
-			var head [4]byte
-			for _, nr := range records {
-				binary.LittleEndian.PutUint16(head[:], uint16(nr.RecType))
-				binary.LittleEndian.PutUint16(head[2:], nr.RecSize)
-
-				// send the record for decryption
-				dec.Write(head[:])
-				dec.Write(nr.Data)
-			}
-			dec.Flush()
-
-			newrecset := make([]*rec, 0, len(records))
-			for _, nr := range records {
-				dec.Read(head[:]) // discard 4 byte header
-
-				dr := &rec{
-					RecType: nr.RecType,
-					RecSize: nr.RecSize,
-					Data:    make([]byte, int(nr.RecSize)),
-				}
-				dec.Read(dr.Data)
-
-				switch nr.RecType {
-				case RecTypeBOF, RecTypeFilePass, RecTypeUsrExcl, RecTypeFileLock, RecTypeInterfaceHdr, RecTypeRRDInfo, RecTypeRRDHead:
-					// keep original data
-					copy(dr.Data, nr.Data)
-				case RecTypeBoundSheet8:
-					// copy the position un-decrypted
-					copy(dr.Data[:4], nr.Data)
-				default:
-					// apply decryption
-				}
-
-				newrecset = append(newrecset, dr)
-			}
-
-			b.substreams[ss] = newrecset
-			records = newrecset
-		}
-
+	for _, records := range b.substreams {
+		//log.Printf("Processing substream %d/%d (%d records)", ss, len(b.substreams), len(records))
 		for i, nr := range records {
 			var bb io.Reader = bytes.NewReader(nr.Data)
 
 			switch nr.RecType {
 			case RecTypeSST:
-				//log.Println(i, nr.RecType)
-
 				recSet := []*rec{nr}
 
 				lastIndex := i
@@ -162,6 +219,7 @@ func (b *WorkBook) loadFromStream(r io.Reader) error {
 					lastIndex++
 					recSet = append(recSet, records[lastIndex])
 				}
+
 				b.strings, err = parseSST(recSet)
 				if err != nil {
 					return err
@@ -170,7 +228,7 @@ func (b *WorkBook) loadFromStream(r io.Reader) error {
 			case RecTypeContinue:
 				// no-op (used above)
 			case RecTypeEOF:
-				log.Println("End Of Stream")
+				// done
 
 			case RecTypeBOF:
 				err = binary.Read(bb, binary.LittleEndian, b.h)
@@ -187,24 +245,21 @@ func (b *WorkBook) loadFromStream(r io.Reader) error {
 				if b.h.DocType != 0x0005 && b.h.DocType != 0x0010 {
 					// we only support the workbook or worksheet substreams
 					log.Println("xls: unsupported document type")
-					break
+					//break
 				}
 
 			case RecTypeCodePage:
-				//log.Println(i, nr.RecType)
 				err = binary.Read(bb, binary.LittleEndian, &b.codepage)
 				if err != nil {
 					return err
 				}
 
 			case RecTypeDate1904:
-				//log.Println(i, nr.RecType)
 				err = binary.Read(bb, binary.LittleEndian, &b.dateMode)
 				if err != nil {
 					return err
 				}
 			case RecTypeBoundSheet8:
-				//log.Println(i, nr.RecType)
 				bs := &boundSheet{}
 				err = binary.Read(bb, binary.LittleEndian, &bs.Position)
 				if err != nil {
@@ -229,7 +284,6 @@ func (b *WorkBook) loadFromStream(r io.Reader) error {
 					return err
 				}
 				b.sheets = append(b.sheets, bs)
-				log.Println("SHEET", bs.Name, "at pos", bs.Position)
 			default:
 				//log.Println(i, "SKIPPED", nr.RecType)
 			}
@@ -239,8 +293,6 @@ func (b *WorkBook) loadFromStream(r io.Reader) error {
 	return err
 }
 
-var errSkipped = errors.New("xls: skipped record type")
-
 func (b *WorkBook) nextRecord(r io.Reader) (*rec, error) {
 	var rt recordType
 	var rs uint16
@@ -248,8 +300,14 @@ func (b *WorkBook) nextRecord(r io.Reader) (*rec, error) {
 	if err != nil {
 		return nil, err
 	}
+	if rt == 0 {
+		return nil, io.EOF
+	}
 
 	err = binary.Read(r, binary.LittleEndian, &rs)
+	if rs > 8224 {
+		return nil, errors.New("xls: invalid data format")
+	}
 	if err != nil {
 		return nil, err
 	}

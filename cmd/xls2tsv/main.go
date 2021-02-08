@@ -23,19 +23,25 @@ func main() {
 	sanitize := regexp.MustCompile("[^a-zA-Z0-9]+")
 	newlines := regexp.MustCompile("[ \n\r\t]+")
 	for _, fn := range flag.Args() {
+		log.Printf("Opening file '%s' ...", fn)
 		wb, err := xls.Open(context.Background(), fn)
 		if err != nil {
-			log.Fatal(err)
+			log.Println(err)
+			continue
 		}
-		log.Println(fn)
 
 		ext := filepath.Ext(fn)
 		fn2 := filepath.Base(strings.TrimSuffix(fn, ext))
 
 		for _, s := range wb.Sheets() {
+			log.Printf("  Opening Sheet '%s'...", s)
 			sheet, err := wb.Get(s)
 			if err != nil {
 				log.Println(err)
+				continue
+			}
+			if sheet.IsEmpty() {
+				log.Println("    Empty sheet. Skipping.")
 				continue
 			}
 			s2 := sanitize.ReplaceAllString(s, "_")
@@ -61,7 +67,6 @@ func main() {
 				}
 				if nonblank || !*skipBlanks {
 					fmt.Fprintln(f, strings.Join(row, "\t"))
-					f.Sync()
 				}
 			}
 			f.Close()

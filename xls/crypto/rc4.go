@@ -41,8 +41,10 @@ func (d *rc4Writer) Reset() {
 func (d *rc4Writer) Flush() {
 	var zeros [1024]byte
 
+	endpad := 0
 	if d.offset < 1024 {
-		d.offset += copy(d.bytes[d.offset:], zeros[:])
+		endpad = copy(d.bytes[d.offset:], zeros[:])
+		d.offset += endpad
 	}
 	if d.offset != 1024 {
 		panic("invalid offset fill")
@@ -51,7 +53,7 @@ func (d *rc4Writer) Flush() {
 	// decrypt and write results to output buffer
 	d.startBlock()
 	d.dec.XORKeyStream(d.bytes[:], d.bytes[:])
-	d.buf.Write(d.bytes[:])
+	d.buf.Write(d.bytes[:1024-endpad])
 
 	d.offset = 0
 	d.block++

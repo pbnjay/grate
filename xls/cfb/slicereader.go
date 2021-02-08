@@ -51,6 +51,10 @@ func (s *SliceReader) Seek(offset int64, whence int) (int64, error) {
 	}
 	// current offset in stream
 	trueOffset := int64(s.Offset) + s.CSize[int(s.Index)]
+	if offset == 0 && whence == io.SeekCurrent {
+		// just asking for current position
+		return trueOffset, nil
+	}
 
 	switch whence {
 	case io.SeekStart:

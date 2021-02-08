@@ -12,9 +12,11 @@ import (
 )
 
 func (b *WorkBook) Sheets() []string {
-	res := make([]string, len(b.sheets))
-	for i, s := range b.sheets {
-		res[i] = s.Name
+	res := make([]string, 0, len(b.sheets))
+	for _, s := range b.sheets {
+		if (s.HiddenState & 0x03) == 0 {
+			res = append(res, s.Name)
+		}
 	}
 	return res
 }
@@ -40,6 +42,7 @@ type WorkSheet struct {
 
 	rows   []*row
 	maxcol int
+	empty  bool
 
 	iterRow int
 }
@@ -79,30 +82,91 @@ func (s *WorkSheet) placeValue(rowIndex, colIndex int, val interface{}) {
 	s.rows[rowIndex].cols[colIndex] = val
 }
 
+func (s *WorkSheet) IsEmpty() bool {
+	return s.empty
+}
+
 func (s *WorkSheet) parse() error {
+	var minRow, maxRow uint32
+	var minCol, maxCol uint16
+	for _, r := range s.b.substreams[s.ss] {
+		if r.RecType == RecTypeWsBool {
+			if (r.Data[1] & 0x10) != 0 {
+				// it's a dialog
+				return nil
+			}
+		}
+	}
+
+	var formulaRow, formulaCol uint16
 	for _, r := range s.b.substreams[s.ss] {
 		bb := bytes.NewReader(r.Data)
 
 		switch r.RecType {
-		case RecTypeWindow2:
-			opts := binary.LittleEndian.Uint16(r.Data)
-			// right-to-left = 0x40, selected = 0x400
-			log.Printf("sheet options: %x", opts)
+		//case RecTypeWindow2:
+		//opts := binary.LittleEndian.Uint16(r.Data)
+		// right-to-left = 0x40, selected = 0x400
+		//log.Printf("sheet options: %x", opts)
+		case RecTypeDimensions:
+			binary.Read(bb, binary.LittleEndian, &minRow)
+			binary.Read(bb, binary.LittleEndian, &maxRow)
+			binary.Read(bb, binary.LittleEndian, &minCol)
+			binary.Read(bb, binary.LittleEndian, &maxCol)
+			//log.Printf("dimensions: %d,%d + %dx%d", minRow&0x0000FFFF, minCol,
+			//	(maxRow&0x0000FFFF)-(minRow&0x0000FFFF), maxCol-minCol)
+			if minRow > 0x0000FFFF || maxRow > 0x00010000 {
+				log.Println("invalid dimensions")
+			}
+			if minCol > 0x00FF || maxCol > 0x0100 {
+				log.Println("invalid dimensions")
+			}
+			if (maxRow-minRow) == 0 && (maxCol-minCol) == 0 {
+				s.empty = true
+			}
+
 		case RecTypeRow:
 			row := &shRow{}
 			binary.Read(bb, binary.LittleEndian, row)
-			log.Printf("row spec: %+v", *row)
+			if (row.Reserved & 0xFFFF) != 0 {
+				log.Println("invalid Row spec")
+				continue
+			}
+			//log.Printf("row spec: %+v", *row)
+
 		case RecTypeBlank:
 			var rowIndex, colIndex uint16
 			binary.Read(bb, binary.LittleEndian, &rowIndex)
 			binary.Read(bb, binary.LittleEndian, &colIndex)
-			log.Printf("blank spec: %d %d", rowIndex, colIndex)
+			//log.Printf("blank spec: %d %d", rowIndex, colIndex)
+
+		case RecTypeBoolErr:
+			var rowIndex, colIndex, ixfe uint16
+			binary.Read(bb, binary.LittleEndian, &rowIndex)
+			binary.Read(bb, binary.LittleEndian, &colIndex)
+			binary.Read(bb, binary.LittleEndian, &ixfe)
+			if r.Data[7] == 0 {
+				bv := false
+				if r.Data[6] == 1 {
+					bv = true
+				}
+				s.placeValue(int(rowIndex), int(colIndex), bv)
+				//log.Printf("bool/error spec: %d %d %+v", rowIndex, colIndex, bv)
+			} else {
+				be, ok := berrLookup[r.Data[6]]
+				if !ok {
+					be = "<unknown error>"
+				}
+				s.placeValue(int(rowIndex), int(colIndex), be)
+				//log.Printf("bool/error spec: %d %d %s", rowIndex, colIndex, be)
+			}
+
 		case RecTypeMulBlank:
 			var rowIndex, firstCol uint16
 			binary.Read(bb, binary.LittleEndian, &rowIndex)
 			binary.Read(bb, binary.LittleEndian, &firstCol)
-			nrk := int((r.RecSize - 6) / 6)
-			log.Printf("row blanks spec: %d %d %d", rowIndex, firstCol, nrk)
+		//	nrk := int((r.RecSize - 6) / 6)
+		//	log.Printf("row blanks spec: %d %d %d", rowIndex, firstCol, nrk)
+
 		case RecTypeMulRk:
 			mr := &shMulRK{}
 			nrk := int((r.RecSize - 6) / 6)
@@ -123,8 +187,7 @@ func (s *WorkSheet) parse() error {
 				s.placeValue(int(mr.RowIndex), int(mr.FirstCol)+i, rval)
 			}
 			binary.Read(bb, binary.LittleEndian, &mr.LastCol)
-
-			log.Printf("mulrow spec: %+v", *mr)
+			//log.Printf("mulrow spec: %+v", *mr)
 
 		case RecTypeNumber:
 			var rowIndex, colIndex, ixfe uint16
@@ -135,7 +198,7 @@ func (s *WorkSheet) parse() error {
 			binary.Read(bb, binary.LittleEndian, &xnum)
 			value := math.Float64frombits(xnum)
 			s.placeValue(int(rowIndex), int(colIndex), value)
-			log.Printf("Number spec: %d %d = %f", rowIndex, colIndex, value)
+			//log.Printf("Number spec: %d %d = %f", rowIndex, colIndex, value)
 
 		case RecTypeRK:
 			var rowIndex, colIndex uint16
@@ -151,28 +214,59 @@ func (s *WorkSheet) parse() error {
 				rval = rr.Value.Float64()
 			}
 			s.placeValue(int(rowIndex), int(colIndex), rval)
-			log.Printf("RK spec: %d %d = %s", rowIndex, colIndex, rr.Value.String())
+			//log.Printf("RK spec: %d %d = %s", rowIndex, colIndex, rr.Value.String())
 
 		case RecTypeFormula:
-			var rowIndex, colIndex uint16
-			binary.Read(bb, binary.LittleEndian, &rowIndex)
-			binary.Read(bb, binary.LittleEndian, &colIndex)
-
-			log.Printf("formula spec: %d %d ~~ %+v", rowIndex, colIndex, r.Data)
+			var ixfe uint16
+			binary.Read(bb, binary.LittleEndian, &formulaRow)
+			binary.Read(bb, binary.LittleEndian, &formulaCol)
+			binary.Read(bb, binary.LittleEndian, &ixfe)
+			fdata := r.Data[6:]
+			if fdata[6] == 0xFF && r.Data[7] == 0xFF {
+				switch fdata[0] {
+				case 0:
+					// string in next record
+				case 1:
+					// boolean
+					bv := false
+					if fdata[2] != 0 {
+						bv = true
+					}
+					s.placeValue(int(formulaRow), int(formulaCol), bv)
+				case 2:
+					// error value
+					be, ok := berrLookup[fdata[2]]
+					if !ok {
+						be = "<unknown error>"
+					}
+					s.placeValue(int(formulaRow), int(formulaCol), be)
+				case 3:
+					// blank string
+				default:
+					log.Println("unknown formula value type")
+				}
+			} else {
+				var xnum uint64
+				binary.Read(bb, binary.LittleEndian, &xnum)
+				value := math.Float64frombits(xnum)
+				s.placeValue(int(formulaRow), int(formulaCol), value)
+			}
+			//log.Printf("formula spec: %d %d ~~ %+v", formulaRow, formulaCol, r.Data)
 
 		case RecTypeString:
-			var charCount, flags uint16
+			var charCount uint16
+			var flags byte
 			binary.Read(bb, binary.LittleEndian, &charCount)
 			binary.Read(bb, binary.LittleEndian, &flags)
-			s := ""
+			fstr := ""
 			if (flags & 1) == 0 {
-				s = string(r.Data[4:])
+				fstr = string(r.Data[3:])
 			} else {
 				us := make([]uint16, charCount)
 				binary.Read(bb, binary.LittleEndian, us)
-				s = string(utf16.Decode(us))
+				fstr = string(utf16.Decode(us))
 			}
-			log.Printf("string spec:  = %s", s)
+			s.placeValue(int(formulaRow), int(formulaCol), fstr)
 
 		case RecTypeLabelSst:
 			var rowIndex, colIndex, ixfe uint16
@@ -181,8 +275,11 @@ func (s *WorkSheet) parse() error {
 			binary.Read(bb, binary.LittleEndian, &colIndex)
 			binary.Read(bb, binary.LittleEndian, &ixfe)
 			binary.Read(bb, binary.LittleEndian, &sstIndex)
+			if int(sstIndex) > len(s.b.strings) {
+				panic("invalid sst")
+			}
 			s.placeValue(int(rowIndex), int(colIndex), s.b.strings[sstIndex])
-			log.Printf("SST spec: %d %d = [%d] %s", rowIndex, colIndex, sstIndex, s.b.strings[sstIndex])
+			//log.Printf("SST spec: %d %d = [%d] %s", rowIndex, colIndex, sstIndex, s.b.strings[sstIndex])
 
 		case RecTypeHLink:
 			loc := &shRef8{}
@@ -214,13 +311,14 @@ func (s *WorkSheet) parse() error {
 			binary.Read(bb, binary.LittleEndian, &cmcs)
 			mcRefs := make([]shRef8, cmcs)
 			binary.Read(bb, binary.LittleEndian, &mcRefs)
-			log.Printf("MergeCells spec: %d records", cmcs)
-			for j, mc := range mcRefs {
-				log.Printf("    %d: %+v", j, mc)
-			}
+			//log.Printf("MergeCells spec: %d records", cmcs)
+			// TODO: implement markers to annotate these in tabular output
+			// for j, mc := range mcRefs {
+			// 	log.Printf("    %d: %+v", j, mc)
+			// }
 
 		default:
-			log.Println("worksheet", r.RecType, r.RecSize)
+			//log.Println("worksheet", r.RecType, r.RecSize)
 
 		}
 	}
@@ -249,13 +347,15 @@ func (s *WorkSheet) Strings() []string {
 }
 
 // Scan extracts values from the row into the provided arguments
-// Arguments must be pointers to one of 4 supported types:
-//     int, float64, string, or time.Time
+// Arguments must be pointers to one of 5 supported types:
+//     bool, int, float64, string, or time.Time
 func (s *WorkSheet) Scan(args ...interface{}) error {
 	currow := s.rows[s.iterRow]
 
 	for i, a := range args {
 		switch v := a.(type) {
+		case *bool:
+			*v = currow.cols[i].(bool)
 		case *int:
 			*v = currow.cols[i].(int)
 		case *float64:
@@ -272,4 +372,15 @@ func (s *WorkSheet) Scan(args ...interface{}) error {
 }
 
 // ErrInvalidType is returned by Scan for invalid arguments.
-var ErrInvalidType = errors.New("xls: Scan only supports *int, *float64, *string, *time.Time arguments")
+var ErrInvalidType = errors.New("xls: Scan only supports *bool, *int, *float64, *string, *time.Time arguments")
+
+var berrLookup = map[byte]string{
+	0x00: "#NULL!",
+	0x07: "#DIV/0!",
+	0x0F: "#VALUE!",
+	0x17: "#REF!",
+	0x1D: "#NAME?",
+	0x24: "#NUM!",
+	0x2A: "#N/A",
+	0x2B: "#GETTING_DATA",
+}
