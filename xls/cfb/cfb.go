@@ -265,7 +265,7 @@ func (d *doc) buildDirs(br *bytes.Reader) error {
 	return nil
 }
 
-func (d *doc) getStreamReader(sid uint32, size uint64) io.Reader {
+func (d *doc) getStreamReader(sid uint32, size uint64) io.ReadSeeker {
 	// NB streamData is a slice of slices of the raw data, so this is the
 	// only allocation - for the (much smaller) list of sector slices
 	streamData := make([][]byte, 1+(size>>d.header.SectorShift))
@@ -295,7 +295,7 @@ func (d *doc) getStreamReader(sid uint32, size uint64) io.Reader {
 	return &SliceReader{Data: streamData}
 }
 
-func (d *doc) getMiniStreamReader(sid uint32, size uint64) io.Reader {
+func (d *doc) getMiniStreamReader(sid uint32, size uint64) io.ReadSeeker {
 	// TODO: move into a separate cache so we don't recalculate it each time
 	fatStreamData := make([][]byte, 1+(d.ministreamsize>>d.header.SectorShift))
 

@@ -12,7 +12,7 @@ type Document interface {
 	List() ([]string, error)
 
 	// Open the named stream contained in the document.
-	Open(name string) (io.Reader, error)
+	Open(name string) (io.ReadSeeker, error)
 }
 
 // Open a Compound File Binary Format document.
@@ -41,7 +41,7 @@ func (d *doc) List() ([]string, error) {
 }
 
 // Open the named stream contained in the document.
-func (d *doc) Open(name string) (io.Reader, error) {
+func (d *doc) Open(name string) (io.ReadSeeker, error) {
 	for _, e := range d.dir {
 		if e.String() == name && e.ObjectType == typeStream {
 			if e.StreamSize < uint64(d.header.MiniStreamCutoffSize) {
