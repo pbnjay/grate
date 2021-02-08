@@ -12,6 +12,18 @@ func TestHeader(t *testing.T) {
 		t.Fatal(err)
 	}
 	log.Println(wb.filename)
+
+	for _, s := range wb.Sheets() {
+		log.Println(s)
+		sheet, err := wb.Get(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		for sheet.Next() {
+			log.Println(sheet.Strings())
+		}
+	}
 }
 
 func TestHeader2(t *testing.T) {

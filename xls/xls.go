@@ -27,9 +27,13 @@ type WorkBook struct {
 	sheets   []*boundSheet
 	codepage uint16
 	dateMode uint16
+	strings  []string
 
 	password   string
 	substreams [][]*rec
+
+	fpos          int64
+	pos2substream map[int64]int
 
 	decryptors map[int]crypto.Decryptor
 }
@@ -44,6 +48,8 @@ func Open(ctx context.Context, filename string) (*WorkBook, error) {
 		filename: filename,
 		ctx:      ctx,
 		doc:      doc,
+
+		pos2substream: make(map[int64]int, 10),
 	}
 
 	rdr, err := doc.Open("Workbook")
@@ -64,7 +70,9 @@ func (b *WorkBook) loadFromStream(r io.Reader) error {
 		if nr.RecType == RecTypeBOF {
 			substr++
 			b.substreams = append(b.substreams, []*rec{})
+			b.pos2substream[b.fpos] = substr
 		}
+		b.fpos += int64(4 + len(nr.Data))
 
 		if nr.RecType == RecTypeFilePass {
 			etype := binary.LittleEndian.Uint16(nr.Data)
@@ -154,7 +162,10 @@ func (b *WorkBook) loadFromStream(r io.Reader) error {
 					lastIndex++
 					recSet = append(recSet, records[lastIndex])
 				}
-				parseSST(recSet)
+				b.strings, err = parseSST(recSet)
+				if err != nil {
+					return err
+				}
 
 			case RecTypeContinue:
 				// no-op (used above)
@@ -218,7 +229,7 @@ func (b *WorkBook) loadFromStream(r io.Reader) error {
 					return err
 				}
 				b.sheets = append(b.sheets, bs)
-				log.Println("SHEET", bs.Name)
+				log.Println("SHEET", bs.Name, "at pos", bs.Position)
 			default:
 				//log.Println(i, "SKIPPED", nr.RecType)
 			}
@@ -231,7 +242,6 @@ func (b *WorkBook) loadFromStream(r io.Reader) error {
 var errSkipped = errors.New("xls: skipped record type")
 
 func (b *WorkBook) nextRecord(r io.Reader) (*rec, error) {
-
 	var rt recordType
 	var rs uint16
 	err := binary.Read(r, binary.LittleEndian, &rt)
