@@ -45,9 +45,9 @@ func (d *doc) Open(name string) (io.ReadSeeker, error) {
 	for _, e := range d.dir {
 		if e.String() == name && e.ObjectType == typeStream {
 			if e.StreamSize < uint64(d.header.MiniStreamCutoffSize) {
-				return d.getMiniStreamReader(uint32(e.StartingSectorLocation), e.StreamSize), nil
+				return d.getMiniStreamReader(uint32(e.StartingSectorLocation), e.StreamSize)
 			} else if e.StreamSize != 0 {
-				return d.getStreamReader(uint32(e.StartingSectorLocation), e.StreamSize), nil
+				return d.getStreamReader(uint32(e.StartingSectorLocation), e.StreamSize)
 			}
 		}
 	}

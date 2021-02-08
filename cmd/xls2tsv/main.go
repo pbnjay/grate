@@ -4,6 +4,8 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -14,6 +16,7 @@ import (
 )
 
 func main() {
+	pretend := flag.Bool("p", false, "pretend to output .tsv")
 	//infoOnly := flag.Bool("i", false, "show info/stats ONLY")
 	removeNewlines := flag.Bool("r", true, "remove embedded tabs, newlines, and condense spaces in cell contents")
 	trimSpaces := flag.Bool("w", true, "trim whitespace from cell contents")
@@ -45,9 +48,14 @@ func main() {
 				continue
 			}
 			s2 := sanitize.ReplaceAllString(s, "_")
-			f, err := os.Create(fn2 + "." + s2 + ".tsv")
-			if err != nil {
-				log.Fatal(err)
+			var w io.Writer = ioutil.Discard
+			if !*pretend {
+				f, err := os.Create(fn2 + "." + s2 + ".tsv")
+				if err != nil {
+					log.Fatal(err)
+				}
+				defer f.Close()
+				w = f
 			}
 
 			for sheet.Next() {
@@ -66,10 +74,12 @@ func main() {
 					}
 				}
 				if nonblank || !*skipBlanks {
-					fmt.Fprintln(f, strings.Join(row, "\t"))
+					fmt.Fprintln(w, strings.Join(row, "\t"))
 				}
 			}
-			f.Close()
+			if c, ok := w.(io.Closer); ok {
+				c.Close()
+			}
 		}
 	}
 }

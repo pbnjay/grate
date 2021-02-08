@@ -99,8 +99,20 @@ func (s *WorkSheet) parse() error {
 	}
 
 	var formulaRow, formulaCol uint16
-	for _, r := range s.b.substreams[s.ss] {
+	for ridx, r := range s.b.substreams[s.ss] {
 		bb := bytes.NewReader(r.Data)
+		//log.Println(ridx, r.RecType)
+
+		// sec 2.1.7.20.6 Common Productions ABNF:
+		/*
+			CELLTABLE = 1*(1*Row *CELL 1*DBCell) *EntExU2
+			CELL = FORMULA / Blank / MulBlank / RK / MulRk / BoolErr / Number / LabelSst
+			FORMULA = [Uncalced] Formula [Array / Table / ShrFmla / SUB] [String *Continue]
+
+			Not parsed form the list above:
+				DBCell, EntExU2, Uncalced, Array, Table,ShrFmla
+				NB: no idea what "SUB" is
+		*/
 
 		switch r.RecType {
 		//case RecTypeWindow2:
@@ -266,6 +278,27 @@ func (s *WorkSheet) parse() error {
 				binary.Read(bb, binary.LittleEndian, us)
 				fstr = string(utf16.Decode(us))
 			}
+
+			if (ridx + 1) < len(s.b.substreams[s.ss]) {
+				ridx2 := ridx + 1
+				nrecs := len(s.b.substreams[s.ss])
+				for ridx2 < nrecs {
+					r2 := s.b.substreams[s.ss][ridx2]
+					if r2.RecType != RecTypeContinue {
+						break
+					}
+					if (r2.Data[0] & 1) == 0 {
+						fstr += string(r2.Data[1:])
+					} else {
+						bb2 := bytes.NewReader(r2.Data[1:])
+						us := make([]uint16, len(r2.Data)-1)
+						binary.Read(bb2, binary.LittleEndian, us)
+						fstr += string(utf16.Decode(us))
+					}
+					ridx2++
+				}
+			}
+
 			s.placeValue(int(formulaRow), int(formulaCol), fstr)
 
 		case RecTypeLabelSst:
@@ -276,7 +309,7 @@ func (s *WorkSheet) parse() error {
 			binary.Read(bb, binary.LittleEndian, &ixfe)
 			binary.Read(bb, binary.LittleEndian, &sstIndex)
 			if int(sstIndex) > len(s.b.strings) {
-				panic("invalid sst")
+				return errors.New("xls: invalid sst index")
 			}
 			s.placeValue(int(rowIndex), int(colIndex), s.b.strings[sstIndex])
 			//log.Printf("SST spec: %d %d = [%d] %s", rowIndex, colIndex, sstIndex, s.b.strings[sstIndex])
@@ -284,6 +317,8 @@ func (s *WorkSheet) parse() error {
 		case RecTypeHLink:
 			loc := &shRef8{}
 			binary.Read(bb, binary.LittleEndian, loc)
+			loc.FirstCol &= 0x00FF // spec doesn't say what to do when MUST is disregarded...
+			loc.LastCol &= 0x00FF
 			var x uint64
 			binary.Read(bb, binary.LittleEndian, &x) // skip and discard classid
 			binary.Read(bb, binary.LittleEndian, &x)
@@ -301,10 +336,18 @@ func (s *WorkSheet) parse() error {
 				binary.Read(bb, binary.LittleEndian, us)
 				str = string(utf16.Decode(us))
 			}
+			//log.Printf("hyperlink spec: %+v = %s", loc, str)
+			if loc.FirstCol > maxCol {
+				//log.Println("invalid hyperlink column")
+				continue
+			}
+			if uint32(loc.FirstRow) > maxRow {
+				//log.Println("invalid hyperlink row")
+				continue
+			}
 
 			// TODO: apply merge cell rules
 			s.placeValue(int(loc.FirstRow), int(loc.FirstCol), str)
-			log.Printf("hyperlink spec: %+v = %s", loc, str)
 
 		case RecTypeMergeCells:
 			var cmcs uint16
@@ -316,6 +359,9 @@ func (s *WorkSheet) parse() error {
 			// for j, mc := range mcRefs {
 			// 	log.Printf("    %d: %+v", j, mc)
 			// }
+
+		case RecTypeContinue:
+			// the only situation so far is when used in RecTypeString above
 
 		default:
 			//log.Println("worksheet", r.RecType, r.RecSize)

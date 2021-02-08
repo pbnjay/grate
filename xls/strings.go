@@ -2,6 +2,7 @@ package xls
 
 import (
 	"encoding/binary"
+	"errors"
 	"io"
 	"io/ioutil"
 	"unicode/utf16"
@@ -173,7 +174,7 @@ func parseSST(recs []*rec) ([]string, error) {
 					current[j] = uint16(binary.LittleEndian.Uint16(buf[:2]))
 					buf = buf[2:]
 					if len(buf) == 1 {
-						panic("off by one")
+						return nil, errors.New("xls: off by one")
 					}
 				}
 			}

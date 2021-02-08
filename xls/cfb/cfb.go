@@ -76,7 +76,7 @@ type directory struct {
 
 func (d *directory) String() string {
 	if (d.NameByteLen&1) == 1 || d.NameByteLen > 64 {
-		panic("invalid utf16 string")
+		return "<invalid utf16 string>"
 	}
 	r16 := utf16.Decode(d.Name[:int(d.NameByteLen)/2])
 	// trim off null terminator
@@ -117,39 +117,39 @@ func (d *doc) load(rx io.ReadSeeker) error {
 	}
 	if fullAssertions {
 		if h.ClassID[0] != 0 || h.ClassID[1] != 0 {
-			panic("invalid CLSID")
+			return errors.New("ole2: invalid CLSID")
 		}
 		if h.MajorVersion != 3 && h.MajorVersion != 4 {
-			panic("unknown major version")
+			return errors.New("ole2: unknown major version")
 		}
 		if h.MinorVersion != 0x3E {
 			log.Printf("WARNING MinorVersion = 0x%02x NOT 0x3E", h.MinorVersion)
-			//panic("unknown minor version")
+			//return errors.New("ole2: unknown minor version")
 		}
 
 		for _, v := range h.Reserved1 {
 			if v != 0 {
-				panic("reserved section is non-zero")
+				return errors.New("ole2: reserved section is non-zero")
 			}
 		}
 		if h.MajorVersion == 3 {
 			if h.SectorShift != 9 {
-				panic("invalid sector size")
+				return errors.New("ole2: invalid sector size")
 			}
 			if h.NumDirectorySectors != 0 {
-				panic("version 3 does not support directory sectors")
+				return errors.New("ole2: version 3 does not support directory sectors")
 			}
 		}
 		if h.MajorVersion == 4 {
 			if h.SectorShift != 12 {
-				panic("invalid sector size")
+				return errors.New("ole2: invalid sector size")
 			}
 		}
 		if h.MiniSectorShift != 6 {
-			panic("invalid mini sector size")
+			return errors.New("ole2: invalid mini sector size")
 		}
 		if h.MiniStreamCutoffSize != 0x00001000 {
-			panic("invalid mini sector cutoff")
+			return errors.New("ole2: invalid mini sector cutoff")
 		}
 	}
 	d.header = h
@@ -166,6 +166,9 @@ func (d *doc) load(rx io.ReadSeeker) error {
 			break
 		}
 		offs := int64(1+sid) << int32(h.SectorShift)
+		if offs >= int64(len(d.data)) {
+			return errors.New("xls/cfb: unable to load file")
+		}
 		sector := d.data[offs:]
 		for j := 0; j < numFATentries; j++ {
 			sid2 := le.Uint32(sector)
@@ -188,7 +191,7 @@ func (d *doc) load(rx io.ReadSeeker) error {
 				}
 
 				offs := int64(1+sid2) << int32(h.SectorShift)
-				if offs > int64(len(d.data)) {
+				if offs >= int64(len(d.data)) {
 					return errors.New("xls/cfb: unable to load file")
 				}
 				sector := d.data[offs:]
@@ -209,18 +212,22 @@ func (d *doc) load(rx io.ReadSeeker) error {
 	sid := h.FirstMiniFATSectorLocation
 	for sid != secEndOfChain {
 		offs := int64(1+sid) << int32(h.SectorShift)
+		if offs >= int64(len(d.data)) {
+			return errors.New("xls/cfb: unable to load file")
+		}
 		sector := d.data[offs:]
 		for j := 0; j < numFATentries; j++ {
 			sid = le.Uint32(sector)
 			d.minifat = append(d.minifat, sid)
 			sector = sector[4:]
 		}
-		// chain the next mini FAT sector
-		sid = le.Uint32(sector)
 
 		if len(d.minifat) >= int(h.NumMiniFATSectors) {
 			break
 		}
+
+		// chain the next mini FAT sector
+		sid = le.Uint32(sector)
 	}
 
 	// step 3: read the Directory Entries
@@ -270,7 +277,7 @@ func (d *doc) buildDirs(br *bytes.Reader) error {
 	return nil
 }
 
-func (d *doc) getStreamReader(sid uint32, size uint64) io.ReadSeeker {
+func (d *doc) getStreamReader(sid uint32, size uint64) (io.ReadSeeker, error) {
 	// NB streamData is a slice of slices of the raw data, so this is the
 	// only allocation - for the (much smaller) list of sector slices
 	streamData := make([][]byte, 1+(size>>d.header.SectorShift))
@@ -294,13 +301,13 @@ func (d *doc) getStreamReader(sid uint32, size uint64) io.ReadSeeker {
 		x++
 	}
 	if size != 0 {
-		panic("incomplete read")
+		return nil, errors.New("ole2: incomplete read")
 	}
 
-	return &SliceReader{Data: streamData}
+	return &SliceReader{Data: streamData}, nil
 }
 
-func (d *doc) getMiniStreamReader(sid uint32, size uint64) io.ReadSeeker {
+func (d *doc) getMiniStreamReader(sid uint32, size uint64) (io.ReadSeeker, error) {
 	// TODO: move into a separate cache so we don't recalculate it each time
 	fatStreamData := make([][]byte, 1+(d.ministreamsize>>d.header.SectorShift))
 
@@ -346,5 +353,5 @@ func (d *doc) getMiniStreamReader(sid uint32, size uint64) io.ReadSeeker {
 		sid = d.minifat[sid]
 	}
 
-	return &SliceReader{Data: streamData}
+	return &SliceReader{Data: streamData}, nil
 }
