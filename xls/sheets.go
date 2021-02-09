@@ -27,6 +27,7 @@ func (b *WorkBook) Get(sheetName string) (*WorkSheet, error) {
 			ss := b.pos2substream[int64(s.Position)]
 			ws := &WorkSheet{
 				b: b, s: s, ss: ss,
+				iterRow: -1,
 			}
 			return ws, ws.parse()
 		}
