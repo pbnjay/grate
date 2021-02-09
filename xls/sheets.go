@@ -41,8 +41,11 @@ type WorkSheet struct {
 	ss  int
 	err error
 
+	minRow uint32
+	maxRow uint32
+	minCol uint16
+	maxCol uint16
 	rows   []*row
-	maxcol int
 	empty  bool
 
 	iterRow int
@@ -78,19 +81,15 @@ type row struct {
 }
 
 func (s *WorkSheet) placeValue(rowIndex, colIndex int, val interface{}) {
-	// ensure we always have a complete matrix
-	if s.maxcol <= colIndex {
-		s.maxcol = colIndex + 1
-		for _, r := range s.rows {
-			for len(r.cols) <= colIndex {
-				r.cols = append(r.cols, staticBlank)
-			}
-		}
+	if colIndex > int(s.maxCol) || rowIndex > int(s.maxRow) {
+		// invalid
+		return
 	}
 
+	// ensure we always have a complete matrix
 	for len(s.rows) <= rowIndex {
-		emptyRow := make([]interface{}, s.maxcol)
-		for i := 0; i < s.maxcol; i++ {
+		emptyRow := make([]interface{}, s.maxCol)
+		for i := 0; i < int(s.maxCol); i++ {
 			emptyRow[i] = staticBlank
 		}
 		s.rows = append(s.rows, &row{emptyRow})
@@ -104,8 +103,6 @@ func (s *WorkSheet) IsEmpty() bool {
 }
 
 func (s *WorkSheet) parse() error {
-	var minRow, maxRow uint32
-	var minCol, maxCol uint16
 	for _, r := range s.b.substreams[s.ss] {
 		if r.RecType == RecTypeWsBool {
 			if (r.Data[1] & 0x10) != 0 {
@@ -133,19 +130,24 @@ func (s *WorkSheet) parse() error {
 
 		switch r.RecType {
 		case RecTypeDimensions:
-			binary.Read(bb, binary.LittleEndian, &minRow)
-			binary.Read(bb, binary.LittleEndian, &maxRow)
-			binary.Read(bb, binary.LittleEndian, &minCol)
-			binary.Read(bb, binary.LittleEndian, &maxCol)
-			//log.Printf("dimensions: %d,%d + %dx%d", minRow&0x0000FFFF, minCol,
-			//	(maxRow&0x0000FFFF)-(minRow&0x0000FFFF), maxCol-minCol)
-			if minRow > 0x0000FFFF || maxRow > 0x00010000 {
+			binary.Read(bb, binary.LittleEndian, &s.minRow)
+			binary.Read(bb, binary.LittleEndian, &s.maxRow)
+			binary.Read(bb, binary.LittleEndian, &s.minCol)
+			binary.Read(bb, binary.LittleEndian, &s.maxCol)
+			//log.Printf("dimensions: %d,%d + %dx%d", s.minRow&0x0000FFFF, s.minCol,
+			//	(s.maxRow&0x0000FFFF)-(s.minRow&0x0000FFFF), s.maxCol-s.minCol)
+			if s.minRow > 0x0000FFFF || s.maxRow > 0x00010000 {
 				log.Println("invalid dimensions")
 			}
-			if minCol > 0x00FF || maxCol > 0x0100 {
+			if s.minCol > 0x00FF || s.maxCol > 0x0100 {
 				log.Println("invalid dimensions")
 			}
-			if (maxRow-minRow) == 0 && (maxCol-minCol) == 0 {
+			s.minRow &= 0xFFFF
+			s.maxRow &= 0xFFFF
+			s.minCol &= 0x00FF
+			s.maxCol &= 0x00FF
+
+			if (s.maxRow-s.minRow) == 0 && (s.maxCol-s.minCol) == 0 {
 				s.empty = true
 			}
 
@@ -330,16 +332,19 @@ func (s *WorkSheet) parse() error {
 		case RecTypeHLink:
 			loc := &shRef8{}
 			binary.Read(bb, binary.LittleEndian, loc)
-			loc.FirstCol &= 0x00FF // spec doesn't say what to do when MUST is disregarded...
-			loc.LastCol &= 0x00FF
-
-			if loc.FirstCol > maxCol {
+			if loc.FirstCol > s.maxCol {
 				//log.Println("invalid hyperlink column")
 				continue
 			}
-			if uint32(loc.FirstRow) > maxRow {
+			if uint32(loc.FirstRow) > s.maxRow {
 				//log.Println("invalid hyperlink row")
 				continue
+			}
+			if loc.LastRow == 0xFFFF {
+				loc.LastRow = uint16(s.maxRow)
+			}
+			if loc.LastCol == 0xFF {
+				loc.LastCol = s.maxCol
 			}
 
 			displayText, linkText, err := decodeHyperlinks(bb)
@@ -367,6 +372,10 @@ func (s *WorkSheet) parse() error {
 						s.placeValue(int(rn), int(cn), continueColumnMerged)
 					}
 				}
+				if rn == 0xFFFF {
+					// uint32s are fun
+					break
+				}
 			}
 
 		case RecTypeMergeCells:
@@ -375,6 +384,12 @@ func (s *WorkSheet) parse() error {
 			mcRefs := make([]shRef8, cmcs)
 			binary.Read(bb, binary.LittleEndian, &mcRefs)
 			for _, loc := range mcRefs {
+				if loc.LastRow == 0xFFFF {
+					loc.LastRow = uint16(s.maxRow)
+				}
+				if loc.LastCol == 0xFF {
+					loc.LastCol = s.maxCol
+				}
 				for rn := loc.FirstRow; rn <= loc.LastRow; rn++ {
 					for cn := loc.FirstCol; cn <= loc.LastCol; cn++ {
 						if rn == loc.FirstRow && cn == loc.FirstCol {
@@ -392,6 +407,10 @@ func (s *WorkSheet) parse() error {
 						} else {
 							s.placeValue(int(rn), int(cn), continueColumnMerged)
 						}
+					}
+					if rn == 0xFFFF {
+						// uint32s are fun
+						break
 					}
 				}
 			}

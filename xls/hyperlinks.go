@@ -11,7 +11,6 @@ import (
 )
 
 func decodeHyperlinks(r io.Reader) (displayText, linkText string, err error) {
-
 	var x uint64
 	binary.Read(r, binary.LittleEndian, &x) // skip and discard classid
 	binary.Read(r, binary.LittleEndian, &x)
@@ -113,7 +112,7 @@ func parseHyperlinkMoniker(r io.Reader) (string, error) {
 		if length > 0 {
 			io.CopyN(ioutil.Discard, r, 6)
 			length -= 6
-			buf2 := make([]uint16, (length-6)/2)
+			buf2 := make([]uint16, length/2)
 			binary.Read(r, binary.LittleEndian, &buf2)
 			return string(utf16.Decode(buf2)), nil
 		}
