@@ -45,14 +45,30 @@ type WorkSheet struct {
 	empty  bool
 
 	iterRow int
+	iterMC  int
 }
 
-type staticBlankType byte
+type staticCellType rune
 
-const staticBlank staticBlankType = 0
+const (
+	staticBlank staticCellType = 0
 
-func (staticBlankType) String() string {
-	return ""
+	// marks a continuation column within a merged cell.
+	continueColumnMerged staticCellType = '→'
+	// marks the last column of a merged cell.
+	endColumnMerged staticCellType = '⇥'
+
+	// marks a continuation row within a merged cell.
+	continueRowMerged staticCellType = '↓'
+	// marks the last row of a merged cell.
+	endRowMerged staticCellType = '⤓'
+)
+
+func (s staticCellType) String() string {
+	if s == 0 {
+		return ""
+	}
+	return string([]rune{rune(s)})
 }
 
 type row struct {
@@ -115,10 +131,6 @@ func (s *WorkSheet) parse() error {
 		*/
 
 		switch r.RecType {
-		//case RecTypeWindow2:
-		//opts := binary.LittleEndian.Uint16(r.Data)
-		// right-to-left = 0x40, selected = 0x400
-		//log.Printf("sheet options: %x", opts)
 		case RecTypeDimensions:
 			binary.Read(bb, binary.LittleEndian, &minRow)
 			binary.Read(bb, binary.LittleEndian, &maxRow)
@@ -335,21 +347,53 @@ func (s *WorkSheet) parse() error {
 				continue
 			}
 
-			//log.Printf("hyperlink spec: %+v = %s ~ %s", loc, displayText, " <"+linkText+"> ")
-
-			// TODO: apply merge cell rules
-			s.placeValue(int(loc.FirstRow), int(loc.FirstCol), displayText+" <"+linkText+">")
+			// apply merge cell rules
+			for rn := loc.FirstRow; rn <= loc.LastRow; rn++ {
+				for cn := loc.FirstCol; cn <= loc.LastCol; cn++ {
+					if rn == loc.FirstRow && cn == loc.FirstCol {
+						s.placeValue(int(rn), int(cn), displayText+" <"+linkText+">")
+					} else if cn == loc.FirstCol {
+						// first and last column MAY be the same
+						if rn == loc.LastRow {
+							s.placeValue(int(rn), int(cn), endRowMerged)
+						} else {
+							s.placeValue(int(rn), int(cn), continueRowMerged)
+						}
+					} else if cn == loc.LastCol {
+						// first and last column are NOT the same
+						s.placeValue(int(rn), int(cn), endColumnMerged)
+					} else {
+						s.placeValue(int(rn), int(cn), continueColumnMerged)
+					}
+				}
+			}
 
 		case RecTypeMergeCells:
 			var cmcs uint16
 			binary.Read(bb, binary.LittleEndian, &cmcs)
 			mcRefs := make([]shRef8, cmcs)
 			binary.Read(bb, binary.LittleEndian, &mcRefs)
-			//log.Printf("MergeCells spec: %d records", cmcs)
-			// TODO: implement markers to annotate these in tabular output
-			// for j, mc := range mcRefs {
-			// 	log.Printf("    %d: %+v", j, mc)
-			// }
+			for _, loc := range mcRefs {
+				for rn := loc.FirstRow; rn <= loc.LastRow; rn++ {
+					for cn := loc.FirstCol; cn <= loc.LastCol; cn++ {
+						if rn == loc.FirstRow && cn == loc.FirstCol {
+							// should be a value there already!
+						} else if cn == loc.FirstCol {
+							// first and last column MAY be the same
+							if rn == loc.LastRow {
+								s.placeValue(int(rn), int(cn), endRowMerged)
+							} else {
+								s.placeValue(int(rn), int(cn), continueRowMerged)
+							}
+						} else if cn == loc.LastCol {
+							// first and last column are NOT the same
+							s.placeValue(int(rn), int(cn), endColumnMerged)
+						} else {
+							s.placeValue(int(rn), int(cn), continueColumnMerged)
+						}
+					}
+				}
+			}
 
 		case RecTypeContinue:
 			// the only situation so far is when used in RecTypeString above
