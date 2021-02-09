@@ -319,24 +319,7 @@ func (s *WorkSheet) parse() error {
 			binary.Read(bb, binary.LittleEndian, loc)
 			loc.FirstCol &= 0x00FF // spec doesn't say what to do when MUST is disregarded...
 			loc.LastCol &= 0x00FF
-			var x uint64
-			binary.Read(bb, binary.LittleEndian, &x) // skip and discard classid
-			binary.Read(bb, binary.LittleEndian, &x)
-			var flags, slen uint32
-			binary.Read(bb, binary.LittleEndian, &slen)
-			if slen != 2 {
-				log.Println("unknown hyperlink version")
-				continue
-			}
-			str := "<hyperlink>"
-			binary.Read(bb, binary.LittleEndian, &flags)
-			if (flags & 0x10) != 0 {
-				binary.Read(bb, binary.LittleEndian, &slen)
-				us := make([]uint16, slen)
-				binary.Read(bb, binary.LittleEndian, us)
-				str = string(utf16.Decode(us))
-			}
-			//log.Printf("hyperlink spec: %+v = %s", loc, str)
+
 			if loc.FirstCol > maxCol {
 				//log.Println("invalid hyperlink column")
 				continue
@@ -346,8 +329,16 @@ func (s *WorkSheet) parse() error {
 				continue
 			}
 
+			displayText, linkText, err := decodeHyperlinks(bb)
+			if err != nil {
+				log.Println(err)
+				continue
+			}
+
+			//log.Printf("hyperlink spec: %+v = %s ~ %s", loc, displayText, " <"+linkText+"> ")
+
 			// TODO: apply merge cell rules
-			s.placeValue(int(loc.FirstRow), int(loc.FirstCol), str)
+			s.placeValue(int(loc.FirstRow), int(loc.FirstCol), displayText+" <"+linkText+">")
 
 		case RecTypeMergeCells:
 			var cmcs uint16
