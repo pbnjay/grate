@@ -41,10 +41,10 @@ type WorkSheet struct {
 	ss  int
 	err error
 
-	minRow uint32
-	maxRow uint32
-	minCol uint16
-	maxCol uint16
+	minRow int
+	maxRow int // maximum valid row index (0xFFFF)
+	minCol int
+	maxCol int // maximum valid column index (0xFF)
 	rows   []*row
 	empty  bool
 
@@ -81,15 +81,15 @@ type row struct {
 }
 
 func (s *WorkSheet) placeValue(rowIndex, colIndex int, val interface{}) {
-	if colIndex > int(s.maxCol) || rowIndex > int(s.maxRow) {
+	if colIndex > s.maxCol || rowIndex > s.maxRow {
 		// invalid
 		return
 	}
 
 	// ensure we always have a complete matrix
 	for len(s.rows) <= rowIndex {
-		emptyRow := make([]interface{}, s.maxCol)
-		for i := 0; i < int(s.maxCol); i++ {
+		emptyRow := make([]interface{}, s.maxCol+1)
+		for i := 0; i <= s.maxCol; i++ {
 			emptyRow[i] = staticBlank
 		}
 		s.rows = append(s.rows, &row{emptyRow})
@@ -103,17 +103,78 @@ func (s *WorkSheet) IsEmpty() bool {
 }
 
 func (s *WorkSheet) parse() error {
-	for _, r := range s.b.substreams[s.ss] {
-		if r.RecType == RecTypeWsBool {
+	inSubstream := 0
+	for idx, r := range s.b.substreams[s.ss] {
+		if inSubstream > 0 {
+			if r.RecType == RecTypeEOF {
+				inSubstream--
+			}
+			continue
+		}
+		switch r.RecType {
+		case RecTypeBOF:
+			if idx > 0 {
+				inSubstream++
+				continue
+			}
+		case RecTypeWsBool:
 			if (r.Data[1] & 0x10) != 0 {
 				// it's a dialog
 				return nil
 			}
+
+		case RecTypeDimensions:
+			bb := bytes.NewReader(r.Data)
+			var minRow, maxRow uint32
+			var minCol, maxCol uint16
+
+			// max = 0-based index of the row AFTER the last valid index
+			binary.Read(bb, binary.LittleEndian, &minRow)
+			binary.Read(bb, binary.LittleEndian, &maxRow) // max = 0x010000
+			binary.Read(bb, binary.LittleEndian, &minCol)
+			binary.Read(bb, binary.LittleEndian, &maxCol) // max = 0x000100
+			//log.Printf("dimensions: %d,%d + %dx%d", minRow&0x0000FFFF, minCol,
+			//	(maxRow&0x0000FFFF)-(minRow&0x0000FFFF), maxCol-minCol)
+			if minRow > 0x0000FFFF || maxRow > 0x00010000 {
+				log.Println("invalid dimensions")
+			}
+			if minCol > 0x00FF || maxCol > 0x0100 {
+				log.Println("invalid dimensions")
+			}
+			s.minRow = int(uint64(minRow) & 0x0FFFF)
+			s.maxRow = int(uint64(maxRow)&0x1FFFF) - 1 // translate to last valid index
+			s.minCol = int(uint64(minCol) & 0x000FF)
+			s.maxCol = int(uint64(maxCol)&0x001FF) - 1 // translate to last valid index
+			//log.Println(s.minCol, s.maxCol)
+			if (maxRow-minRow) == 0 || (maxCol-minCol) == 0 {
+				s.empty = true
+			} else {
+				// pre-allocate cells
+				s.placeValue(s.maxRow, s.maxCol, staticBlank)
+			}
+
+		case RecTypeRow:
+			bb := bytes.NewReader(r.Data)
+			row := &shRow{}
+			binary.Read(bb, binary.LittleEndian, row)
+			if (row.Reserved & 0xFFFF) != 0 {
+				log.Println("invalid Row spec")
+				continue
+			}
+			//log.Printf("row spec: %+v", *row)
 		}
 	}
+	inSubstream = 0
 
 	var formulaRow, formulaCol uint16
 	for ridx, r := range s.b.substreams[s.ss] {
+		if inSubstream > 0 {
+			if r.RecType == RecTypeEOF {
+				inSubstream--
+			}
+			continue
+		}
+
 		bb := bytes.NewReader(r.Data)
 		//log.Println(ridx, r.RecType)
 
@@ -129,37 +190,11 @@ func (s *WorkSheet) parse() error {
 		*/
 
 		switch r.RecType {
-		case RecTypeDimensions:
-			binary.Read(bb, binary.LittleEndian, &s.minRow)
-			binary.Read(bb, binary.LittleEndian, &s.maxRow)
-			binary.Read(bb, binary.LittleEndian, &s.minCol)
-			binary.Read(bb, binary.LittleEndian, &s.maxCol)
-			//log.Printf("dimensions: %d,%d + %dx%d", s.minRow&0x0000FFFF, s.minCol,
-			//	(s.maxRow&0x0000FFFF)-(s.minRow&0x0000FFFF), s.maxCol-s.minCol)
-			if s.minRow > 0x0000FFFF || s.maxRow > 0x00010000 {
-				log.Println("invalid dimensions")
-			}
-			if s.minCol > 0x00FF || s.maxCol > 0x0100 {
-				log.Println("invalid dimensions")
-			}
-			s.minRow &= 0xFFFF
-			s.maxRow &= 0xFFFF
-			s.minCol &= 0x00FF
-			s.maxCol &= 0x00FF
-
-			if (s.maxRow-s.minRow) == 0 && (s.maxCol-s.minCol) == 0 {
-				s.empty = true
-			}
-
-		case RecTypeRow:
-			row := &shRow{}
-			binary.Read(bb, binary.LittleEndian, row)
-			if (row.Reserved & 0xFFFF) != 0 {
-				log.Println("invalid Row spec")
+		case RecTypeBOF:
+			if ridx > 0 {
+				inSubstream++
 				continue
 			}
-			//log.Printf("row spec: %+v", *row)
-
 		case RecTypeBlank:
 			var rowIndex, colIndex uint16
 			binary.Read(bb, binary.LittleEndian, &rowIndex)
@@ -332,11 +367,11 @@ func (s *WorkSheet) parse() error {
 		case RecTypeHLink:
 			loc := &shRef8{}
 			binary.Read(bb, binary.LittleEndian, loc)
-			if loc.FirstCol > s.maxCol {
+			if int(loc.FirstCol) > s.maxCol {
 				//log.Println("invalid hyperlink column")
 				continue
 			}
-			if uint32(loc.FirstRow) > s.maxRow {
+			if int(loc.FirstRow) > s.maxRow {
 				//log.Println("invalid hyperlink row")
 				continue
 			}
@@ -344,7 +379,7 @@ func (s *WorkSheet) parse() error {
 				loc.LastRow = uint16(s.maxRow)
 			}
 			if loc.LastCol == 0xFF {
-				loc.LastCol = s.maxCol
+				loc.LastCol = uint16(s.maxCol)
 			}
 
 			displayText, linkText, err := decodeHyperlinks(bb)
@@ -354,27 +389,23 @@ func (s *WorkSheet) parse() error {
 			}
 
 			// apply merge cell rules
-			for rn := loc.FirstRow; rn <= loc.LastRow; rn++ {
-				for cn := loc.FirstCol; cn <= loc.LastCol; cn++ {
-					if rn == loc.FirstRow && cn == loc.FirstCol {
-						s.placeValue(int(rn), int(cn), displayText+" <"+linkText+">")
-					} else if cn == loc.FirstCol {
+			for rn := int(loc.FirstRow); rn <= int(loc.LastRow); rn++ {
+				for cn := int(loc.FirstCol); cn <= int(loc.LastCol); cn++ {
+					if rn == int(loc.FirstRow) && cn == int(loc.FirstCol) {
+						s.placeValue(rn, cn, displayText+" <"+linkText+">")
+					} else if cn == int(loc.FirstCol) {
 						// first and last column MAY be the same
-						if rn == loc.LastRow {
-							s.placeValue(int(rn), int(cn), endRowMerged)
+						if rn == int(loc.LastRow) {
+							s.placeValue(rn, cn, endRowMerged)
 						} else {
-							s.placeValue(int(rn), int(cn), continueRowMerged)
+							s.placeValue(rn, cn, continueRowMerged)
 						}
-					} else if cn == loc.LastCol {
+					} else if cn == int(loc.LastCol) {
 						// first and last column are NOT the same
-						s.placeValue(int(rn), int(cn), endColumnMerged)
+						s.placeValue(rn, cn, endColumnMerged)
 					} else {
-						s.placeValue(int(rn), int(cn), continueColumnMerged)
+						s.placeValue(rn, cn, continueColumnMerged)
 					}
-				}
-				if rn == 0xFFFF {
-					// uint32s are fun
-					break
 				}
 			}
 
@@ -388,29 +419,25 @@ func (s *WorkSheet) parse() error {
 					loc.LastRow = uint16(s.maxRow)
 				}
 				if loc.LastCol == 0xFF {
-					loc.LastCol = s.maxCol
+					loc.LastCol = uint16(s.maxCol)
 				}
-				for rn := loc.FirstRow; rn <= loc.LastRow; rn++ {
-					for cn := loc.FirstCol; cn <= loc.LastCol; cn++ {
-						if rn == loc.FirstRow && cn == loc.FirstCol {
+				for rn := int(loc.FirstRow); rn <= int(loc.LastRow); rn++ {
+					for cn := int(loc.FirstCol); cn <= int(loc.LastCol); cn++ {
+						if rn == int(loc.FirstRow) && cn == int(loc.FirstCol) {
 							// should be a value there already!
-						} else if cn == loc.FirstCol {
+						} else if cn == int(loc.FirstCol) {
 							// first and last column MAY be the same
-							if rn == loc.LastRow {
-								s.placeValue(int(rn), int(cn), endRowMerged)
+							if rn == int(loc.LastRow) {
+								s.placeValue(rn, cn, endRowMerged)
 							} else {
-								s.placeValue(int(rn), int(cn), continueRowMerged)
+								s.placeValue(rn, cn, continueRowMerged)
 							}
-						} else if cn == loc.LastCol {
+						} else if cn == int(loc.LastCol) {
 							// first and last column are NOT the same
-							s.placeValue(int(rn), int(cn), endColumnMerged)
+							s.placeValue(rn, cn, endColumnMerged)
 						} else {
-							s.placeValue(int(rn), int(cn), continueColumnMerged)
+							s.placeValue(rn, cn, continueColumnMerged)
 						}
-					}
-					if rn == 0xFFFF {
-						// uint32s are fun
-						break
 					}
 				}
 			}
