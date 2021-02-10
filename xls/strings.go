@@ -38,6 +38,37 @@ func decodeShortXLUnicodeString(r io.Reader) (string, error) {
 	return string(utf16.Decode(content)), nil
 }
 
+// 2.5.294
+func decodeXLUnicodeString(r io.Reader) (string, error) {
+	var cch uint16
+	var flags uint8
+	err := binary.Read(r, binary.LittleEndian, &cch)
+	if err != nil {
+		return "", err
+	}
+	err = binary.Read(r, binary.LittleEndian, &flags)
+	if err != nil {
+		return "", err
+	}
+
+	content := make([]uint16, cch)
+	if (flags & 0x1) == 0 {
+		// 16-bit characters but only the bottom 8bits
+		contentBytes := make([]byte, cch)
+		n, err2 := io.ReadFull(r, contentBytes)
+		if n == 0 && err2 != io.ErrUnexpectedEOF {
+			err = err2
+		}
+		for i, x := range contentBytes {
+			content[i] = uint16(x)
+		}
+	} else {
+		// 16-bit characters
+		err = binary.Read(r, binary.LittleEndian, content)
+	}
+	return string(utf16.Decode(content)), nil
+}
+
 // 2.5.293
 func decodeXLUnicodeRichExtendedString(r io.Reader) (string, error) {
 	var cch, cRun uint16

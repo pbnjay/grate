@@ -245,6 +245,16 @@ func (s *WorkSheet) parse() error {
 					rval = rr.Value.Int()
 				} else {
 					rval = rr.Value.Float64()
+
+					fno := s.b.xfs[rr.IXFCell]
+					format := s.b.formats[fno]
+					if formatIsDateTime(fno, format) {
+						dt, ok := getDateTime(fno, format, rr.Value.Float64(), s.b.dateMode == 1)
+						if ok {
+							rval = dt
+						}
+						//log.Println("apply format: ", format, rval, int(mr.RowIndex), int(mr.FirstCol)+i)
+					}
 				}
 				s.placeValue(int(mr.RowIndex), int(mr.FirstCol)+i, rval)
 			}
@@ -259,7 +269,18 @@ func (s *WorkSheet) parse() error {
 			binary.Read(bb, binary.LittleEndian, &ixfe)
 			binary.Read(bb, binary.LittleEndian, &xnum)
 			value := math.Float64frombits(xnum)
-			s.placeValue(int(rowIndex), int(colIndex), value)
+			var rval interface{} = value
+
+			fno := s.b.xfs[ixfe]
+			format := s.b.formats[fno]
+			if formatIsDateTime(fno, format) {
+				dt, ok := getDateTime(fno, format, value, s.b.dateMode == 1)
+				if ok {
+					rval = dt
+				}
+				//log.Println("apply format: ", format, rval)
+			}
+			s.placeValue(int(rowIndex), int(colIndex), rval)
 			//log.Printf("Number spec: %d %d = %f", rowIndex, colIndex, value)
 
 		case RecTypeRK:
@@ -274,6 +295,16 @@ func (s *WorkSheet) parse() error {
 				rval = rr.Value.Int()
 			} else {
 				rval = rr.Value.Float64()
+
+				fno := s.b.xfs[rr.IXFCell]
+				format := s.b.formats[fno]
+				if formatIsDateTime(fno, format) {
+					dt, ok := getDateTime(fno, format, rr.Value.Float64(), s.b.dateMode == 1)
+					if ok {
+						rval = dt
+					}
+					//log.Println("apply format: ", format, rval)
+				}
 			}
 			s.placeValue(int(rowIndex), int(colIndex), rval)
 			//log.Printf("RK spec: %d %d = %s", rowIndex, colIndex, rr.Value.String())
@@ -311,7 +342,18 @@ func (s *WorkSheet) parse() error {
 				var xnum uint64
 				binary.Read(bb, binary.LittleEndian, &xnum)
 				value := math.Float64frombits(xnum)
-				s.placeValue(int(formulaRow), int(formulaCol), value)
+				var rval interface{} = value
+
+				fno := s.b.xfs[ixfe]
+				format := s.b.formats[fno]
+				if formatIsDateTime(fno, format) {
+					dt, ok := getDateTime(fno, format, value, s.b.dateMode == 1)
+					if ok {
+						rval = dt
+					}
+					//log.Println("apply format: ", format, rval)
+				}
+				s.placeValue(int(formulaRow), int(formulaCol), rval)
 			}
 			//log.Printf("formula spec: %d %d ~~ %+v", formulaRow, formulaCol, r.Data)
 
@@ -348,7 +390,7 @@ func (s *WorkSheet) parse() error {
 					ridx2++
 				}
 			}
-
+			// TODO: does formula record formatted dates as pre-computed strings?
 			s.placeValue(int(formulaRow), int(formulaCol), fstr)
 
 		case RecTypeLabelSst:

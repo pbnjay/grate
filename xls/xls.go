@@ -35,6 +35,9 @@ type WorkBook struct {
 
 	fpos          int64
 	pos2substream map[int64]int
+
+	formats map[uint16]string
+	xfs     []uint16
 }
 
 func (b *WorkBook) IsProtected() bool {
@@ -52,7 +55,13 @@ func Open(ctx context.Context, filename string) (*WorkBook, error) {
 		ctx:      ctx,
 		doc:      doc,
 
-		pos2substream: make(map[int64]int, 10),
+		pos2substream: make(map[int64]int, 16),
+		formats:       make(map[uint16]string, 16),
+		xfs:           make([]uint16, 0, 128),
+	}
+
+	for no, str := range builtInFormats {
+		b.formats[no] = str
 	}
 
 	rdr, err := doc.Open("Workbook")
@@ -259,6 +268,23 @@ func (b *WorkBook) loadFromStream2(r io.ReadSeeker, isDecrypted bool) error {
 				if err != nil {
 					return err
 				}
+
+			case RecTypeFormat:
+				var fmtNo uint16
+				err = binary.Read(bb, binary.LittleEndian, &fmtNo)
+				formatStr, err := decodeShortXLUnicodeString(bb)
+				if err != nil {
+					log.Println("fail2", err)
+					return err
+				}
+				b.formats[fmtNo] = formatStr
+
+			case RecTypeXF:
+				var x, fmtNo uint16
+				err = binary.Read(bb, binary.LittleEndian, &x) // ignore font
+				err = binary.Read(bb, binary.LittleEndian, &fmtNo)
+				b.xfs = append(b.xfs, fmtNo)
+
 			case RecTypeBoundSheet8:
 				bs := &boundSheet{}
 				err = binary.Read(bb, binary.LittleEndian, &bs.Position)
