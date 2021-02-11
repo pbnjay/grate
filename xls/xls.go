@@ -14,6 +14,7 @@ import (
 	"io"
 	"log"
 
+	"github.com/pbnjay/grate/commonxl"
 	"github.com/pbnjay/grate/xls/cfb"
 	"github.com/pbnjay/grate/xls/crypto"
 )
@@ -60,7 +61,7 @@ func Open(ctx context.Context, filename string) (*WorkBook, error) {
 		xfs:           make([]uint16, 0, 128),
 	}
 
-	for no, str := range builtInFormats {
+	for no, str := range commonxl.BuiltInFormats {
 		b.formats[no] = str
 	}
 

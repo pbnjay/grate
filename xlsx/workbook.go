@@ -6,6 +6,8 @@ import (
 	"io"
 	"path/filepath"
 	"strconv"
+
+	"github.com/pbnjay/grate/commonxl"
 )
 
 func (d *Document) parseRels(dec *xml.Decoder, basedir string) error {
@@ -110,7 +112,7 @@ func (d *Document) parseStyles(dec *xml.Decoder) error {
 					}
 
 					nfid, _ := strconv.ParseInt(thisXF, 10, 16)
-					thisXF = builtInFormats[uint16(nfid)]
+					thisXF = commonxl.BuiltInFormats[uint16(nfid)]
 					d.xfs = append(d.xfs, thisXF)
 				} else {
 					panic("wheres is this xf??")

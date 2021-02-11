@@ -9,6 +9,8 @@ import (
 	"math"
 	"time"
 	"unicode/utf16"
+
+	"github.com/pbnjay/grate/commonxl"
 )
 
 func (b *WorkBook) Sheets() []string {
@@ -248,8 +250,8 @@ func (s *WorkSheet) parse() error {
 
 					fno := s.b.xfs[rr.IXFCell]
 					format := s.b.formats[fno]
-					if formatIsDateTime(fno, format) {
-						dt, ok := getDateTime(fno, format, rr.Value.Float64(), s.b.dateMode == 1)
+					if commonxl.FormatIsDateTime(fno, format) {
+						dt, ok := commonxl.GetDateTime(fno, format, rr.Value.Float64(), s.b.dateMode == 1)
 						if ok {
 							rval = dt
 						}
@@ -273,8 +275,8 @@ func (s *WorkSheet) parse() error {
 
 			fno := s.b.xfs[ixfe]
 			format := s.b.formats[fno]
-			if formatIsDateTime(fno, format) {
-				dt, ok := getDateTime(fno, format, value, s.b.dateMode == 1)
+			if commonxl.FormatIsDateTime(fno, format) {
+				dt, ok := commonxl.GetDateTime(fno, format, value, s.b.dateMode == 1)
 				if ok {
 					rval = dt
 				}
@@ -298,8 +300,8 @@ func (s *WorkSheet) parse() error {
 
 				fno := s.b.xfs[rr.IXFCell]
 				format := s.b.formats[fno]
-				if formatIsDateTime(fno, format) {
-					dt, ok := getDateTime(fno, format, rr.Value.Float64(), s.b.dateMode == 1)
+				if commonxl.FormatIsDateTime(fno, format) {
+					dt, ok := commonxl.GetDateTime(fno, format, rr.Value.Float64(), s.b.dateMode == 1)
 					if ok {
 						rval = dt
 					}
@@ -346,8 +348,8 @@ func (s *WorkSheet) parse() error {
 
 				fno := s.b.xfs[ixfe]
 				format := s.b.formats[fno]
-				if formatIsDateTime(fno, format) {
-					dt, ok := getDateTime(fno, format, value, s.b.dateMode == 1)
+				if commonxl.FormatIsDateTime(fno, format) {
+					dt, ok := commonxl.GetDateTime(fno, format, value, s.b.dateMode == 1)
 					if ok {
 						rval = dt
 					}

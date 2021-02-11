@@ -1,6 +1,7 @@
-package xlsx
+package commonxl
 
-var builtInFormats = map[uint16]string{
+// BuiltInFormats are all the built-in number formats for XLS/XLSX.
+var BuiltInFormats = map[uint16]string{
 	0:  `General`,
 	1:  `0`,
 	2:  `0.00`,
