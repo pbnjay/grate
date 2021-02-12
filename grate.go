@@ -4,6 +4,7 @@ package grate
 
 import (
 	"errors"
+	"sort"
 )
 
 // Source represents a set of data collections.
@@ -26,7 +27,7 @@ var ErrNotInFormat = errors.New("grate: file is not in this format")
 // Open a tabular data file and return a Source for accessing it's contents.
 func Open(filename string) (Source, error) {
 	for _, o := range srcTable {
-		src, err := o(filename)
+		src, err := o.op(filename)
 		if err == nil {
 			return src, nil
 		}
@@ -37,14 +38,20 @@ func Open(filename string) (Source, error) {
 	return nil, errors.New("grate: file format is not known/supported")
 }
 
-var srcTable = make(map[string]OpenFunc)
+type srcOpenTab struct {
+	name string
+	pri  int
+	op   OpenFunc
+}
+
+var srcTable = make([]*srcOpenTab, 0, 20)
 
 // Register the named source as a grate datasource implementation.
-func Register(name string, opener OpenFunc) error {
-	if _, ok := srcTable[name]; ok {
-		return errors.New("grate: source already registered")
-	}
-	srcTable[name] = opener
+func Register(name string, priority int, opener OpenFunc) error {
+	srcTable = append(srcTable, &srcOpenTab{name: name, pri: priority, op: opener})
+	sort.Slice(srcTable, func(i, j int) bool {
+		return srcTable[i].pri < srcTable[j].pri
+	})
 	return nil
 }
 

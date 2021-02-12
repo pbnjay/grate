@@ -20,7 +20,7 @@ import (
 	"github.com/pbnjay/grate/xls/crypto"
 )
 
-var _ = grate.Register("xls", Open)
+var _ = grate.Register("xls", 1, Open)
 
 type WorkBook struct {
 	filename string
