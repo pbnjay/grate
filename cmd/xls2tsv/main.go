@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -15,7 +14,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pbnjay/grate/xls"
+	"github.com/pbnjay/grate"
+	_ "github.com/pbnjay/grate/simple"
+	_ "github.com/pbnjay/grate/xls"
+	_ "github.com/pbnjay/grate/xlsx"
 )
 
 var (
@@ -101,7 +103,7 @@ type Flusher interface {
 
 func processFile(fn string) ([]stats, error) {
 	log.Printf("Opening file '%s' ...", fn)
-	wb, err := xls.Open(context.Background(), fn)
+	wb, err := grate.Open(fn)
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +113,11 @@ func processFile(fn string) ([]stats, error) {
 	ext := filepath.Ext(fn)
 	fn2 := filepath.Base(strings.TrimSuffix(fn, ext))
 
-	for _, s := range wb.Sheets() {
+	sheets, err := wb.List()
+	if err != nil {
+		return nil, err
+	}
+	for _, s := range sheets {
 		ps := stats{
 			Filename:  fn,
 			SheetName: s,
@@ -129,6 +135,9 @@ func processFile(fn string) ([]stats, error) {
 			continue
 		}
 		s2 := sanitize.ReplaceAllString(s, "_")
+		if s == fn {
+			s2 = "main"
+		}
 		var w io.Writer = ioutil.Discard
 		if !*pretend {
 			f, err := os.Create(fn2 + "." + s2 + ".tsv")

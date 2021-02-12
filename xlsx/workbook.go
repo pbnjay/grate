@@ -77,7 +77,7 @@ func (d *Document) parseWorkbook(dec *xml.Decoder) error {
 }
 
 func (d *Document) parseStyles(dec *xml.Decoder) error {
-	csxfNumFormat := []string{}
+	baseNumFormats := []string{}
 	d.xfs = d.xfs[:0]
 
 	section := 0
@@ -88,31 +88,44 @@ func (d *Document) parseStyles(dec *xml.Decoder) error {
 			attrs := attrMap(v.Attr)
 
 			switch v.Name.Local {
+			case "numFmt":
+				fmtNo, _ := strconv.ParseInt(attrs["numFmtId"], 10, 16)
+				d.fmt.Add(uint16(fmtNo), attrs["formatCode"])
+
 			case "cellStyleXfs":
 				section = 1
 			case "cellXfs":
 				section = 2
 				n, _ := strconv.ParseInt(attrs["count"], 10, 64)
-				d.xfs = make([]string, 0, n)
+				d.xfs = make([]commonxl.FmtFunc, 0, n)
 
 			case "xf":
 				if section == 1 {
+					// load base styles, but only save number format
 					if _, ok := attrs["applyNumberFormat"]; ok {
-						csxfNumFormat = append(csxfNumFormat, attrs["numFmtId"])
+						baseNumFormats = append(baseNumFormats, attrs["numFmtId"])
 					} else {
-						csxfNumFormat = append(csxfNumFormat, "-")
+						baseNumFormats = append(baseNumFormats, "0")
 					}
 				} else if section == 2 {
+					// actual referencable cell styles
+					// 1) get base style so we can inherit format properly
 					baseID, _ := strconv.ParseInt(attrs["xfId"], 10, 64)
-					thisXF := csxfNumFormat[baseID]
+					numFmtID := baseNumFormats[baseID]
+
+					// 2) check if this XF overrides the base format
 					if _, ok := attrs["applyNumberFormat"]; ok {
-						thisXF = attrs["numFmtId"]
+						numFmtID = attrs["numFmtId"]
 					} else {
-						thisXF = "="
+						// remove the format (if it was inherited)
+						numFmtID = "0"
 					}
 
-					nfid, _ := strconv.ParseInt(thisXF, 10, 16)
-					thisXF = commonxl.BuiltInFormats[uint16(nfid)]
+					nfid, _ := strconv.ParseInt(numFmtID, 10, 16)
+					thisXF, ok := d.fmt.Get(uint16(nfid))
+					if !ok {
+						panic("numformat unknown")
+					}
 					d.xfs = append(d.xfs, thisXF)
 				} else {
 					panic("wheres is this xf??")

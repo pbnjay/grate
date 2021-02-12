@@ -8,7 +8,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/pbnjay/grate"
+	"github.com/pbnjay/grate/commonxl"
 )
+
+var _ = grate.Register("xlsx", Open)
 
 // Document contains an Office Open XML document.
 type Document struct {
@@ -20,10 +25,11 @@ type Document struct {
 	rels    map[string]map[string]string
 	sheets  []*Sheet
 	strings []string
-	xfs     []string
+	xfs     []commonxl.FmtFunc
+	fmt     commonxl.Formatter
 }
 
-func Open(filename string) (*Document, error) {
+func Open(filename string) (grate.Source, error) {
 	f, err := os.Open(filename)
 	if err != nil {
 		return nil, err
@@ -34,7 +40,7 @@ func Open(filename string) (*Document, error) {
 	}
 	z, err := zip.NewReader(f, info.Size())
 	if err != nil {
-		return nil, err
+		return nil, grate.ErrNotInFormat //err
 	}
 	d := &Document{
 		filename: filename,
@@ -137,17 +143,17 @@ func (d *Document) openXML(name string) (*xml.Decoder, io.Closer, error) {
 	return nil, nil, io.EOF
 }
 
-func (d *Document) Sheets() []string {
+func (d *Document) List() ([]string, error) {
 	res := make([]string, 0, len(d.sheets))
 	for _, s := range d.sheets {
 		//if (s.HiddenState & 0x03) == 0 {
 		res = append(res, s.name)
 		//}
 	}
-	return res
+	return res, nil
 }
 
-func (d *Document) Get(sheetName string) (*Sheet, error) {
+func (d *Document) Get(sheetName string) (grate.Collection, error) {
 	for _, s := range d.sheets {
 		if s.name == sheetName {
 			return s, nil

@@ -14,10 +14,13 @@ import (
 	"io"
 	"log"
 
+	"github.com/pbnjay/grate"
 	"github.com/pbnjay/grate/commonxl"
 	"github.com/pbnjay/grate/xls/cfb"
 	"github.com/pbnjay/grate/xls/crypto"
 )
+
+var _ = grate.Register("xls", Open)
 
 type WorkBook struct {
 	filename string
@@ -37,32 +40,26 @@ type WorkBook struct {
 	fpos          int64
 	pos2substream map[int64]int
 
-	formats map[uint16]string
-	xfs     []uint16
+	nfmt commonxl.Formatter
+	xfs  []uint16
 }
 
 func (b *WorkBook) IsProtected() bool {
 	return b.prot
 }
 
-func Open(ctx context.Context, filename string) (*WorkBook, error) {
+func Open(filename string) (grate.Source, error) {
 	doc, err := cfb.Open(filename)
 	if err != nil {
-		return nil, err
+		return nil, grate.ErrNotInFormat //err
 	}
 
 	b := &WorkBook{
 		filename: filename,
-		ctx:      ctx,
 		doc:      doc,
 
 		pos2substream: make(map[int64]int, 16),
-		formats:       make(map[uint16]string, 16),
 		xfs:           make([]uint16, 0, 128),
-	}
-
-	for no, str := range commonxl.BuiltInFormats {
-		b.formats[no] = str
 	}
 
 	rdr, err := doc.Open("Workbook")
@@ -273,12 +270,12 @@ func (b *WorkBook) loadFromStream2(r io.ReadSeeker, isDecrypted bool) error {
 			case RecTypeFormat:
 				var fmtNo uint16
 				err = binary.Read(bb, binary.LittleEndian, &fmtNo)
-				formatStr, err := decodeShortXLUnicodeString(bb)
+				formatStr, err := decodeXLUnicodeString(bb)
 				if err != nil {
 					log.Println("fail2", err)
 					return err
 				}
-				b.formats[fmtNo] = formatStr
+				b.nfmt.Add(fmtNo, formatStr)
 
 			case RecTypeXF:
 				var x, fmtNo uint16

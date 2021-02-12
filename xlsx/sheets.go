@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/pbnjay/grate/commonxl"
 )
 
 type Sheet struct {
@@ -63,7 +65,7 @@ func (s *Sheet) parseSheet() error {
 
 	currentCellType := BlankCellType
 	currentCell := ""
-	numFormat := ""
+	var numFormat commonxl.FmtFunc
 	tok, err := dec.Token()
 	for ; err == nil; tok, err = dec.Token() {
 		switch v := tok.(type) {

@@ -10,20 +10,20 @@ import (
 	"time"
 	"unicode/utf16"
 
-	"github.com/pbnjay/grate/commonxl"
+	"github.com/pbnjay/grate"
 )
 
-func (b *WorkBook) Sheets() []string {
+func (b *WorkBook) List() ([]string, error) {
 	res := make([]string, 0, len(b.sheets))
 	for _, s := range b.sheets {
 		if (s.HiddenState & 0x03) == 0 {
 			res = append(res, s.Name)
 		}
 	}
-	return res
+	return res, nil
 }
 
-func (b *WorkBook) Get(sheetName string) (*WorkSheet, error) {
+func (b *WorkBook) Get(sheetName string) (grate.Collection, error) {
 	for _, s := range b.sheets {
 		if s.Name == sheetName {
 			ss := b.pos2substream[int64(s.Position)]
@@ -147,7 +147,6 @@ func (s *WorkSheet) parse() error {
 			s.maxRow = int(uint64(maxRow)&0x1FFFF) - 1 // translate to last valid index
 			s.minCol = int(uint64(minCol) & 0x000FF)
 			s.maxCol = int(uint64(maxCol)&0x001FF) - 1 // translate to last valid index
-			//log.Println(s.minCol, s.maxCol)
 			if (maxRow-minRow) == 0 || (maxCol-minCol) == 0 {
 				s.empty = true
 			} else {
@@ -247,16 +246,8 @@ func (s *WorkSheet) parse() error {
 					rval = rr.Value.Int()
 				} else {
 					rval = rr.Value.Float64()
-
 					fno := s.b.xfs[rr.IXFCell]
-					format := s.b.formats[fno]
-					if commonxl.FormatIsDateTime(fno, format) {
-						dt, ok := commonxl.GetDateTime(fno, format, rr.Value.Float64(), s.b.dateMode == 1)
-						if ok {
-							rval = dt
-						}
-						//log.Println("apply format: ", format, rval, int(mr.RowIndex), int(mr.FirstCol)+i)
-					}
+					rval, _ = s.b.nfmt.Apply(fno, rval)
 				}
 				s.placeValue(int(mr.RowIndex), int(mr.FirstCol)+i, rval)
 			}
@@ -271,17 +262,9 @@ func (s *WorkSheet) parse() error {
 			binary.Read(bb, binary.LittleEndian, &ixfe)
 			binary.Read(bb, binary.LittleEndian, &xnum)
 			value := math.Float64frombits(xnum)
-			var rval interface{} = value
-
 			fno := s.b.xfs[ixfe]
-			format := s.b.formats[fno]
-			if commonxl.FormatIsDateTime(fno, format) {
-				dt, ok := commonxl.GetDateTime(fno, format, value, s.b.dateMode == 1)
-				if ok {
-					rval = dt
-				}
-				//log.Println("apply format: ", format, rval)
-			}
+			rval, _ := s.b.nfmt.Apply(fno, value)
+
 			s.placeValue(int(rowIndex), int(colIndex), rval)
 			//log.Printf("Number spec: %d %d = %f", rowIndex, colIndex, value)
 
@@ -297,16 +280,8 @@ func (s *WorkSheet) parse() error {
 				rval = rr.Value.Int()
 			} else {
 				rval = rr.Value.Float64()
-
 				fno := s.b.xfs[rr.IXFCell]
-				format := s.b.formats[fno]
-				if commonxl.FormatIsDateTime(fno, format) {
-					dt, ok := commonxl.GetDateTime(fno, format, rr.Value.Float64(), s.b.dateMode == 1)
-					if ok {
-						rval = dt
-					}
-					//log.Println("apply format: ", format, rval)
-				}
+				rval, _ = s.b.nfmt.Apply(fno, rval)
 			}
 			s.placeValue(int(rowIndex), int(colIndex), rval)
 			//log.Printf("RK spec: %d %d = %s", rowIndex, colIndex, rr.Value.String())
@@ -344,17 +319,8 @@ func (s *WorkSheet) parse() error {
 				var xnum uint64
 				binary.Read(bb, binary.LittleEndian, &xnum)
 				value := math.Float64frombits(xnum)
-				var rval interface{} = value
-
 				fno := s.b.xfs[ixfe]
-				format := s.b.formats[fno]
-				if commonxl.FormatIsDateTime(fno, format) {
-					dt, ok := commonxl.GetDateTime(fno, format, value, s.b.dateMode == 1)
-					if ok {
-						rval = dt
-					}
-					//log.Println("apply format: ", format, rval)
-				}
+				rval, _ := s.b.nfmt.Apply(fno, value)
 				s.placeValue(int(formulaRow), int(formulaCol), rval)
 			}
 			//log.Printf("formula spec: %d %d ~~ %+v", formulaRow, formulaCol, r.Data)
