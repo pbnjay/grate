@@ -13,8 +13,8 @@ import (
 )
 
 func (d *Document) parseRels(dec *xml.Decoder, basedir string) error {
-	tok, err := dec.Token()
-	for ; err == nil; tok, err = dec.Token() {
+	tok, err := dec.RawToken()
+	for ; err == nil; tok, err = dec.RawToken() {
 		switch v := tok.(type) {
 		case xml.StartElement:
 			switch v.Name.Local {
@@ -52,8 +52,8 @@ func (d *Document) parseRels(dec *xml.Decoder, basedir string) error {
 }
 
 func (d *Document) parseWorkbook(dec *xml.Decoder) error {
-	tok, err := dec.Token()
-	for ; err == nil; tok, err = dec.Token() {
+	tok, err := dec.RawToken()
+	for ; err == nil; tok, err = dec.RawToken() {
 		switch v := tok.(type) {
 		case xml.StartElement:
 			switch v.Name.Local {
@@ -101,43 +101,44 @@ func (d *Document) parseStyles(dec *xml.Decoder) error {
 	d.xfs = d.xfs[:0]
 
 	section := 0
-	tok, err := dec.Token()
-	for ; err == nil; tok, err = dec.Token() {
+	tok, err := dec.RawToken()
+	for ; err == nil; tok, err = dec.RawToken() {
 		switch v := tok.(type) {
 		case xml.StartElement:
-			attrs := attrMap(v.Attr)
-
 			switch v.Name.Local {
 			case "styleSheet":
 				// container
 			case "numFmt":
-				fmtNo, _ := strconv.ParseInt(attrs["numFmtId"], 10, 16)
-				d.fmt.Add(uint16(fmtNo), attrs["formatCode"])
+				ax := getAttrs(v.Attr, "numFmtId", "formatCode")
+				fmtNo, _ := strconv.ParseInt(ax[0], 10, 16)
+				d.fmt.Add(uint16(fmtNo), ax[1])
 
 			case "cellStyleXfs":
 				section = 1
 			case "cellXfs":
 				section = 2
-				n, _ := strconv.ParseInt(attrs["count"], 10, 64)
+				ax := getAttrs(v.Attr, "count")
+				n, _ := strconv.ParseInt(ax[0], 10, 64)
 				d.xfs = make([]commonxl.FmtFunc, 0, n)
 
 			case "xf":
+				ax := getAttrs(v.Attr, "numFmtId", "applyNumberFormat", "xfId")
 				if section == 1 {
 					// load base styles, but only save number format
-					if _, ok := attrs["applyNumberFormat"]; ok {
-						baseNumFormats = append(baseNumFormats, attrs["numFmtId"])
+					if ax[1] != "1" {
+						baseNumFormats = append(baseNumFormats, ax[0])
 					} else {
 						baseNumFormats = append(baseNumFormats, "0")
 					}
 				} else if section == 2 {
 					// actual referencable cell styles
 					// 1) get base style so we can inherit format properly
-					baseID, _ := strconv.ParseInt(attrs["xfId"], 10, 64)
+					baseID, _ := strconv.ParseInt(ax[2], 10, 64)
 					numFmtID := baseNumFormats[baseID]
 
 					// 2) check if this XF overrides the base format
-					if _, ok := attrs["applyNumberFormat"]; ok {
-						numFmtID = attrs["numFmtId"]
+					if ax[1] == "1" {
+						numFmtID = ax[0]
 					} else {
 						// remove the format (if it was inherited)
 						numFmtID = "0"
@@ -178,8 +179,8 @@ func (d *Document) parseStyles(dec *xml.Decoder) error {
 
 func (d *Document) parseSharedStrings(dec *xml.Decoder) error {
 	val := ""
-	tok, err := dec.Token()
-	for ; err == nil; tok, err = dec.Token() {
+	tok, err := dec.RawToken()
+	for ; err == nil; tok, err = dec.RawToken() {
 		switch v := tok.(type) {
 		case xml.CharData:
 			val += string(v)

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"runtime/pprof"
 	"strings"
 	"time"
@@ -28,11 +29,26 @@ var (
 	trimSpaces     = flag.Bool("w", true, "trim whitespace from cell contents")
 	skipBlanks     = flag.Bool("b", true, "discard blank rows from the output")
 	cpuprofile     = flag.String("cpuprofile", "", "write cpu profile to file")
+	memprofile     = flag.String("memprofile", "", "write memory profile to file")
 )
 
 func main() {
 	timeFormat := "2006-01-02 15:04:05"
 	flag.Parse()
+
+	if *memprofile != "" {
+		f, err := os.Create(*memprofile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer func() {
+			runtime.GC() // get up-to-date statistics
+			if err := pprof.WriteHeapProfile(f); err != nil {
+				log.Fatal("could not write memory profile: ", err)
+			}
+			f.Close() // error handling omitted for example
+		}()
+	}
 
 	if *cpuprofile != "" {
 		f, err := os.Create(*cpuprofile)

@@ -79,10 +79,14 @@ func refToIndexes(r string) (column, row int) {
 	return int(cn), int(rn)
 }
 
-func attrMap(attrs []xml.Attr) map[string]string {
-	m := make(map[string]string, len(attrs))
+func getAttrs(attrs []xml.Attr, keys ...string) []string {
+	res := make([]string, len(keys))
 	for _, a := range attrs {
-		m[a.Name.Local] = a.Value
+		for i, k := range keys {
+			if a.Name.Local == k {
+				res[i] = a.Value
+			}
+		}
 	}
-	return m
+	return res
 }

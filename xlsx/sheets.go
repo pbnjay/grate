@@ -48,12 +48,12 @@ func (s *Sheet) parseSheet() error {
 	dec, clo, err := s.d.openXML(relsname)
 	if err == nil {
 		// rels might not exist for every sheet
-		tok, err := dec.Token()
-		for ; err == nil; tok, err = dec.Token() {
+		tok, err := dec.RawToken()
+		for ; err == nil; tok, err = dec.RawToken() {
 			if v, ok := tok.(xml.StartElement); ok && v.Name.Local == "Relationship" {
-				ax := attrMap(v.Attr)
-				if ax["TargetMode"] == "External" && ax["Type"] == "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" {
-					linkmap[ax["Id"]] = ax["Target"]
+				ax := getAttrs(v.Attr, "Id", "Type", "Target", "TargetMode")
+				if ax[3] == "External" && ax[1] == "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" {
+					linkmap[ax[0]] = ax[2]
 				}
 			}
 		}
@@ -69,8 +69,8 @@ func (s *Sheet) parseSheet() error {
 	currentCellType := BlankCellType
 	currentCell := ""
 	var numFormat commonxl.FmtFunc
-	tok, err := dec.Token()
-	for ; err == nil; tok, err = dec.Token() {
+	tok, err := dec.RawToken()
+	for ; err == nil; tok, err = dec.RawToken() {
 		switch v := tok.(type) {
 		case xml.CharData:
 			if currentCell == "" {
@@ -112,17 +112,17 @@ func (s *Sheet) parseSheet() error {
 				//log.Println("FAIL row/col: ", currentCell)
 			}
 		case xml.StartElement:
-			ax := attrMap(v.Attr)
 			switch v.Name.Local {
 			case "dimension":
-				if ax["ref"] == "A1" {
+				ax := getAttrs(v.Attr, "ref")
+				if ax[0] == "A1" {
 					// short-circuit empty sheet
 					s.minCol, s.minRow = 0, 0
 					s.maxCol, s.maxRow = 1, 1
 					s.empty = true
 					continue
 				}
-				dims := strings.Split(ax["ref"], ":")
+				dims := strings.Split(ax[0], ":")
 				s.minCol, s.minRow = refToIndexes(dims[0])
 				s.maxCol, s.maxRow = refToIndexes(dims[1])
 				//log.Println("DIMENSION:", s.minRow, s.minCol, ">", s.maxRow, s.maxCol)
@@ -130,12 +130,13 @@ func (s *Sheet) parseSheet() error {
 				//currentRow = ax["r"] // unsigned int row index
 				//log.Println("ROW", currentRow)
 			case "c":
-				currentCellType = CellType(ax["t"])
+				ax := getAttrs(v.Attr, "t", "r", "s")
+				currentCellType = CellType(ax[0])
 				if currentCellType == BlankCellType {
 					currentCellType = NumberCellType
 				}
-				currentCell = ax["r"] // always an A1 style reference
-				style := ax["s"]
+				currentCell = ax[1] // always an A1 style reference
+				style := ax[2]
 				sid, _ := strconv.ParseInt(style, 10, 64)
 				numFormat = s.d.xfs[sid] // unsigned integer lookup
 				//log.Println("CELL", currentCell, sid, numFormat, currentCellType)
@@ -143,7 +144,8 @@ func (s *Sheet) parseSheet() error {
 				//log.Println("CELL VALUE", ax)
 
 			case "mergeCell":
-				dims := strings.Split(ax["ref"], ":")
+				ax := getAttrs(v.Attr, "ref")
+				dims := strings.Split(ax[0], ":")
 				startCol, startRow := refToIndexes(dims[0])
 				endCol, endRow := refToIndexes(dims[1])
 				for r := startRow; r <= endRow; r++ {
@@ -167,8 +169,9 @@ func (s *Sheet) parseSheet() error {
 				}
 
 			case "hyperlink":
-				col, row := refToIndexes(ax["ref"])
-				link := linkmap[ax["id"]]
+				ax := getAttrs(v.Attr, "ref", "id")
+				col, row := refToIndexes(ax[0])
+				link := linkmap[ax[1]]
 				if len(s.rows) > row && len(s.rows[row].cols) > col {
 					if sstr, ok := s.rows[row].cols[col].(string); ok {
 						link = sstr + " <" + link + ">"
@@ -193,7 +196,6 @@ func (s *Sheet) parseSheet() error {
 			case "row":
 				//currentRow = ""
 			}
-
 		default:
 			if grate.Debug {
 				log.Printf("      Unhandled sheet xml tokens %T %+v", tok, tok)
