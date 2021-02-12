@@ -33,6 +33,17 @@ func OpenCSV(filename string) (grate.Source, error) {
 		total++
 		t.rows = append(t.rows, rec)
 	}
+	if err != nil {
+		switch perr := err.(type) {
+		case *csv.ParseError:
+			return nil, grate.WrapErr(perr, grate.ErrNotInFormat)
+		}
+		if total < 10 {
+			// probably? not in this format
+			return nil, grate.WrapErr(err, grate.ErrNotInFormat)
+		}
+		return nil, err
+	}
 
 	// kinda arbitrary metrics for detecting CSV
 	looksGood := 0

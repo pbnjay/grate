@@ -503,14 +503,11 @@ func (s *WorkSheet) Scan(args ...interface{}) error {
 		case *time.Time:
 			*v = currow.cols[i].(time.Time)
 		default:
-			return ErrInvalidType
+			return grate.ErrInvalidScanType
 		}
 	}
 	return nil
 }
-
-// ErrInvalidType is returned by Scan for invalid arguments.
-var ErrInvalidType = errors.New("xls: Scan only supports *bool, *int, *float64, *string, *time.Time arguments")
 
 var berrLookup = map[byte]string{
 	0x00: "#NULL!",

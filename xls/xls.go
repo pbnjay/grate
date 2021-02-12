@@ -51,7 +51,7 @@ func (b *WorkBook) IsProtected() bool {
 func Open(filename string) (grate.Source, error) {
 	doc, err := cfb.Open(filename)
 	if err != nil {
-		return nil, grate.ErrNotInFormat //err
+		return nil, err
 	}
 
 	b := &WorkBook{
@@ -64,7 +64,7 @@ func Open(filename string) (grate.Source, error) {
 
 	rdr, err := doc.Open("Workbook")
 	if err != nil {
-		return nil, err
+		return nil, grate.WrapErr(err, grate.ErrNotInFormat)
 	}
 	err = b.loadFromStream(rdr)
 	return b, err

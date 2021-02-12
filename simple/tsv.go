@@ -32,6 +32,10 @@ func OpenTSV(filename string) (grate.Source, error) {
 		total++
 		t.rows = append(t.rows, r)
 	}
+	if s.Err() != nil {
+		// this can only be read errors, not format
+		return nil, s.Err()
+	}
 
 	// kinda arbitrary metrics for detecting TSV
 	looksGood := 0

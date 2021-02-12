@@ -67,9 +67,9 @@ func (t *simpleFile) Scan(args ...interface{}) error {
 		case *string:
 			*v = row[i]
 		case *time.Time:
-			return errors.New("grate/simple: time.Time not supported, you must parse string manually")
+			return errors.New("grate/simple: time.Time not supported, you must parse date strings manually")
 		default:
-			return errors.New("grate/simple: scan destination must be one of: *bool, *int, *float64, *string, or *time.Time")
+			return grate.ErrInvalidScanType
 		}
 		if err != nil {
 			return err

@@ -40,7 +40,7 @@ func Open(filename string) (grate.Source, error) {
 	}
 	z, err := zip.NewReader(f, info.Size())
 	if err != nil {
-		return nil, grate.ErrNotInFormat //err
+		return nil, grate.WrapErr(err, grate.ErrNotInFormat)
 	}
 	d := &Document{
 		filename: filename,
@@ -52,12 +52,12 @@ func Open(filename string) (grate.Source, error) {
 	// parse the primary relationships
 	dec, c, err := d.openXML("_rels/.rels")
 	if err != nil {
-		return nil, err
+		return nil, grate.WrapErr(err, grate.ErrNotInFormat)
 	}
 	err = d.parseRels(dec, "")
 	c.Close()
 	if err != nil {
-		return nil, err
+		return nil, grate.WrapErr(err, grate.ErrNotInFormat)
 	}
 	if d.primaryDoc == "" {
 		return nil, errors.New("xlsx: invalid document")

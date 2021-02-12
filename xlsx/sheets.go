@@ -252,7 +252,7 @@ func (s *Sheet) Scan(args ...interface{}) error {
 		case *time.Time:
 			*v = currow.cols[i].(time.Time)
 		default:
-			return ErrInvalidType
+			return grate.ErrInvalidScanType
 		}
 	}
 	return nil
@@ -266,6 +266,3 @@ func (s *Sheet) IsEmpty() bool {
 func (s *Sheet) Err() error {
 	return s.err
 }
-
-// ErrInvalidType is returned by Scan for invalid arguments.
-var ErrInvalidType = errors.New("xlsx: Scan only supports *bool, *int, *float64, *string, *time.Time arguments")
