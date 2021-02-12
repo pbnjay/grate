@@ -25,7 +25,7 @@ var _ = grate.Register("xls", 1, Open)
 type WorkBook struct {
 	filename string
 	ctx      context.Context
-	doc      cfb.Document
+	doc      *cfb.Document
 
 	prot     bool
 	h        *header

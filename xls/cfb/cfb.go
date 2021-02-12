@@ -83,7 +83,8 @@ func (d *directory) String() string {
 	return string(r16[:len(r16)-1])
 }
 
-type doc struct {
+// Document represents a Compound File Binary Format document.
+type Document struct {
 	// the entire file, loaded into memory
 	data []byte
 
@@ -99,7 +100,7 @@ type doc struct {
 	ministreamsize  uint32
 }
 
-func (d *doc) load(rx io.ReadSeeker) error {
+func (d *Document) load(rx io.ReadSeeker) error {
 	var err error
 	d.data, err = ioutil.ReadAll(rx)
 	if err != nil {
@@ -236,7 +237,7 @@ func (d *doc) load(rx io.ReadSeeker) error {
 	return err
 }
 
-func (d *doc) buildDirs(br *bytes.Reader) error {
+func (d *Document) buildDirs(br *bytes.Reader) error {
 	h := d.header
 	le := binary.LittleEndian
 
@@ -277,7 +278,7 @@ func (d *doc) buildDirs(br *bytes.Reader) error {
 	return nil
 }
 
-func (d *doc) getStreamReader(sid uint32, size uint64) (io.ReadSeeker, error) {
+func (d *Document) getStreamReader(sid uint32, size uint64) (io.ReadSeeker, error) {
 	// NB streamData is a slice of slices of the raw data, so this is the
 	// only allocation - for the (much smaller) list of sector slices
 	streamData := make([][]byte, 1+(size>>d.header.SectorShift))
@@ -307,7 +308,7 @@ func (d *doc) getStreamReader(sid uint32, size uint64) (io.ReadSeeker, error) {
 	return &SliceReader{Data: streamData}, nil
 }
 
-func (d *doc) getMiniStreamReader(sid uint32, size uint64) (io.ReadSeeker, error) {
+func (d *Document) getMiniStreamReader(sid uint32, size uint64) (io.ReadSeeker, error) {
 	// TODO: move into a separate cache so we don't recalculate it each time
 	fatStreamData := make([][]byte, 1+(d.ministreamsize>>d.header.SectorShift))
 

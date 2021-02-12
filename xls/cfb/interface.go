@@ -8,18 +8,9 @@ import (
 	"github.com/pbnjay/grate"
 )
 
-// Document represents a Compound File Binary Format document.
-type Document interface {
-	// List the streams contained in the document.
-	List() ([]string, error)
-
-	// Open the named stream contained in the document.
-	Open(name string) (io.ReadSeeker, error)
-}
-
 // Open a Compound File Binary Format document.
-func Open(filename string) (Document, error) {
-	d := &doc{}
+func Open(filename string) (*Document, error) {
+	d := &Document{}
 	f, err := os.Open(filename)
 	if err != nil {
 		return nil, err
@@ -32,7 +23,7 @@ func Open(filename string) (Document, error) {
 }
 
 // List the streams contained in the document.
-func (d *doc) List() ([]string, error) {
+func (d *Document) List() ([]string, error) {
 	var res []string
 	for _, e := range d.dir {
 		if e.ObjectType == typeStream {
@@ -43,7 +34,7 @@ func (d *doc) List() ([]string, error) {
 }
 
 // Open the named stream contained in the document.
-func (d *doc) Open(name string) (io.ReadSeeker, error) {
+func (d *Document) Open(name string) (io.ReadSeeker, error) {
 	for _, e := range d.dir {
 		if e.String() == name && e.ObjectType == typeStream {
 			if e.StreamSize < uint64(d.header.MiniStreamCutoffSize) {
