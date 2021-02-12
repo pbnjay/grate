@@ -70,6 +70,9 @@ var srcTable = make([]*srcOpenTab, 0, 20)
 
 // Register the named source as a grate datasource implementation.
 func Register(name string, priority int, opener OpenFunc) error {
+	if Debug {
+		log.Println("Registering the", name, "format at priority", priority)
+	}
 	srcTable = append(srcTable, &srcOpenTab{name: name, pri: priority, op: opener})
 	sort.Slice(srcTable, func(i, j int) bool {
 		return srcTable[i].pri < srcTable[j].pri

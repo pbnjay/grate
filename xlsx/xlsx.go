@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -90,7 +91,6 @@ func Open(filename string) (grate.Source, error) {
 
 	styn := d.rels["http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles"]
 	for _, sst := range styn {
-		//log.Println(styn)
 		// parse the shared string table
 		dec, c, err = d.openXML(sst)
 		if err != nil {
@@ -105,7 +105,6 @@ func Open(filename string) (grate.Source, error) {
 
 	ssn := d.rels["http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings"]
 	for _, sst := range ssn {
-		//log.Println(ssn)
 		// parse the shared string table
 		dec, c, err = d.openXML(sst)
 		if err != nil {
@@ -122,7 +121,9 @@ func Open(filename string) (grate.Source, error) {
 }
 
 func (d *Document) openXML(name string) (*xml.Decoder, io.Closer, error) {
-	//log.Println(name)
+	if grate.Debug {
+		log.Println("    openXML", name)
+	}
 	for _, zf := range d.r.File {
 		if zf.Name == name {
 			zfr, err := zf.Open()

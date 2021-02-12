@@ -75,6 +75,9 @@ func (b *WorkBook) loadFromStream(r io.ReadSeeker) error {
 }
 
 func (b *WorkBook) loadFromStreamWithDecryptor(r io.ReadSeeker, dec crypto.Decryptor) error {
+	if grate.Debug {
+		log.Println("  Decrypting xls stream with standard RC4")
+	}
 	_, err := r.Seek(0, io.SeekStart)
 	if err != nil {
 		log.Println("xls: dec-seek1 failed")
@@ -212,8 +215,10 @@ func (b *WorkBook) loadFromStream2(r io.ReadSeeker, isDecrypted bool) error {
 		return err
 	}
 
-	for _, records := range b.substreams {
-		//log.Printf("Processing substream %d/%d (%d records)", ss, len(b.substreams), len(records))
+	for ss, records := range b.substreams {
+		if grate.Debug {
+			log.Printf("  Processing substream %d/%d (%d records)", ss, len(b.substreams), len(records))
+		}
 		for i, nr := range records {
 			var bb io.Reader = bytes.NewReader(nr.Data)
 
@@ -287,29 +292,27 @@ func (b *WorkBook) loadFromStream2(r io.ReadSeeker, isDecrypted bool) error {
 				bs := &boundSheet{}
 				err = binary.Read(bb, binary.LittleEndian, &bs.Position)
 				if err != nil {
-					log.Println("fail1", err)
 					return err
 				}
 
 				err = binary.Read(bb, binary.LittleEndian, &bs.HiddenState)
 				if err != nil {
-					log.Println("fail1", err)
 					return err
 				}
 				err = binary.Read(bb, binary.LittleEndian, &bs.SheetType)
 				if err != nil {
-					log.Println("fail1", err)
 					return err
 				}
 
 				bs.Name, err = decodeShortXLUnicodeString(bb)
 				if err != nil {
-					log.Println("fail2", err)
 					return err
 				}
 				b.sheets = append(b.sheets, bs)
 			default:
-				//log.Println(i, "SKIPPED", nr.RecType)
+				if grate.Debug && ss == 0 {
+					log.Println("    Unhandled record type:", nr.RecType, i)
+				}
 			}
 		}
 	}

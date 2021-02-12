@@ -135,8 +135,10 @@ func (s *WorkSheet) parse() error {
 			binary.Read(bb, binary.LittleEndian, &maxRow) // max = 0x010000
 			binary.Read(bb, binary.LittleEndian, &minCol)
 			binary.Read(bb, binary.LittleEndian, &maxCol) // max = 0x000100
-			//log.Printf("dimensions: %d,%d + %dx%d", minRow&0x0000FFFF, minCol,
-			//	(maxRow&0x0000FFFF)-(minRow&0x0000FFFF), maxCol-minCol)
+			if grate.Debug {
+				log.Printf("    Sheet dimensions (%d, %d) - (%d,%d)",
+					minCol, minRow, maxCol, maxRow)
+			}
 			if minRow > 0x0000FFFF || maxRow > 0x00010000 {
 				log.Println("invalid dimensions")
 			}
@@ -172,12 +174,13 @@ func (s *WorkSheet) parse() error {
 		if inSubstream > 0 {
 			if r.RecType == RecTypeEOF {
 				inSubstream--
+			} else if grate.Debug {
+				log.Println("      Unhandled sheet substream record type:", r.RecType, ridx)
 			}
 			continue
 		}
 
 		bb := bytes.NewReader(r.Data)
-		//log.Println(ridx, r.RecType)
 
 		// sec 2.1.7.20.6 Common Productions ABNF:
 		/*
@@ -455,9 +458,12 @@ func (s *WorkSheet) parse() error {
 		case RecTypeContinue:
 			// the only situation so far is when used in RecTypeString above
 
+		case RecTypeRow, RecTypeDimensions, RecTypeEOF, RecTypeWsBool:
+			// handled in initial pass
 		default:
-			//log.Println("worksheet", r.RecType, r.RecSize)
-
+			if grate.Debug {
+				log.Println("    Unhandled sheet record type:", r.RecType, ridx)
+			}
 		}
 	}
 	return nil

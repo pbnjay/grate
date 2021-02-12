@@ -4,9 +4,11 @@ import (
 	"encoding/xml"
 	"errors"
 	"io"
+	"log"
 	"path/filepath"
 	"strconv"
 
+	"github.com/pbnjay/grate"
 	"github.com/pbnjay/grate/commonxl"
 )
 
@@ -14,9 +16,10 @@ func (d *Document) parseRels(dec *xml.Decoder, basedir string) error {
 	tok, err := dec.Token()
 	for ; err == nil; tok, err = dec.Token() {
 		switch v := tok.(type) {
-		// the tags we're interested in are all self-closing
 		case xml.StartElement:
 			switch v.Name.Local {
+			case "Relationships":
+				// container
 			case "Relationship":
 				vals := make(map[string]string, 5)
 				for _, a := range v.Attr {
@@ -29,6 +32,16 @@ func (d *Document) parseRels(dec *xml.Decoder, basedir string) error {
 				if vals["Type"] == "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" {
 					d.primaryDoc = vals["Target"]
 				}
+			default:
+				if grate.Debug {
+					log.Println("      Unhandled relationship xml tag", v.Name.Local, v.Attr)
+				}
+			}
+		case xml.EndElement:
+			// not needed
+		default:
+			if grate.Debug {
+				log.Printf("      Unhandled relationship xml tokens %T %+v", tok, tok)
 			}
 		}
 	}
@@ -43,8 +56,6 @@ func (d *Document) parseWorkbook(dec *xml.Decoder) error {
 	for ; err == nil; tok, err = dec.Token() {
 		switch v := tok.(type) {
 		case xml.StartElement:
-			//log.Println("start: ", v.Name.Local)
-
 			switch v.Name.Local {
 			case "sheet":
 				vals := make(map[string]string, 5)
@@ -61,13 +72,22 @@ func (d *Document) parseWorkbook(dec *xml.Decoder) error {
 					relID:   sheetID,
 					name:    sheetName,
 					docname: d.rels["http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet"][sheetID],
+					err:     errNotLoaded,
 				}
 				d.sheets = append(d.sheets, s)
+			case "workbook", "sheets":
+				// containers
+			default:
+				if grate.Debug {
+					log.Println("      Unhandled workbook xml tag", v.Name.Local, v.Attr)
+				}
 			}
 		case xml.EndElement:
-			//log.Println("  end: ", v.Name.Local)
+			// not needed
 		default:
-			//log.Printf("%T %+v", tok, tok)
+			if grate.Debug {
+				log.Printf("      Unhandled workbook xml tokens %T %+v", tok, tok)
+			}
 		}
 	}
 	if err == io.EOF {
@@ -88,6 +108,8 @@ func (d *Document) parseStyles(dec *xml.Decoder) error {
 			attrs := attrMap(v.Attr)
 
 			switch v.Name.Local {
+			case "styleSheet":
+				// container
 			case "numFmt":
 				fmtNo, _ := strconv.ParseInt(attrs["numFmtId"], 10, 16)
 				d.fmt.Add(uint16(fmtNo), attrs["formatCode"])
@@ -131,7 +153,9 @@ func (d *Document) parseStyles(dec *xml.Decoder) error {
 					panic("wheres is this xf??")
 				}
 			default:
-				//log.Println("start: ", v.Name.Local, v.Attr)
+				if grate.Debug {
+					log.Println("  Unhandled style xml tag", v.Name.Local, v.Attr)
+				}
 			}
 		case xml.EndElement:
 			switch v.Name.Local {
@@ -140,9 +164,10 @@ func (d *Document) parseStyles(dec *xml.Decoder) error {
 			case "cellXfs":
 				section = 0
 			}
-			//log.Println("  end: ", v.Name.Local)
 		default:
-			//log.Printf("%T %+v", tok, tok)
+			if grate.Debug {
+				log.Printf("      Unhandled style xml tokens %T %+v", tok, tok)
+			}
 		}
 	}
 	if err == io.EOF {
@@ -162,17 +187,24 @@ func (d *Document) parseSharedStrings(dec *xml.Decoder) error {
 			switch v.Name.Local {
 			case "si":
 				val = ""
+			case "t":
+				// no attributes to parse, we only want the CharData ...
+			case "sst":
+				// main container
 			default:
-				//log.Println("start: ", v.Name.Local)
+				if grate.Debug {
+					log.Println("  Unhandled SST xml tag", v.Name.Local, v.Attr)
+				}
 			}
 		case xml.EndElement:
 			if v.Name.Local == "si" {
 				d.strings = append(d.strings, val)
 				continue
 			}
-			//log.Println("  end: ", v.Name.Local)
 		default:
-			//log.Printf("%T %+v", tok, tok)
+			if grate.Debug {
+				log.Printf("    Unhandled SST xml token %T %+v", tok, tok)
+			}
 		}
 	}
 	if err == io.EOF {

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pbnjay/grate"
 	"github.com/pbnjay/grate/commonxl"
 )
 
@@ -175,12 +176,14 @@ func (s *Sheet) parseSheet() error {
 				}
 				s.placeValue(row, col, link)
 
-			case "mergeCells", "hyperlinks":
-				// NB don't need these outer containers
+			case "worksheet", "mergeCells", "hyperlinks":
+				// containers
 			case "f":
 				//log.Println("start: ", v.Name.Local, v.Attr)
 			default:
-				//log.Println("start: ", v.Name.Local, v.Attr)
+				if grate.Debug {
+					log.Println("      Unhandled sheet xml tag", v.Name.Local, v.Attr)
+				}
 			}
 		case xml.EndElement:
 
@@ -190,9 +193,11 @@ func (s *Sheet) parseSheet() error {
 			case "row":
 				//currentRow = ""
 			}
-			//log.Println("  end: ", v.Name.Local)
+
 		default:
-			//log.Printf("%T %+v", tok, tok)
+			if grate.Debug {
+				log.Printf("      Unhandled sheet xml tokens %T %+v", tok, tok)
+			}
 		}
 	}
 	if err == io.EOF {
