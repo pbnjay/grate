@@ -32,6 +32,8 @@ type Sheet struct {
 	iterRow int
 }
 
+var errNotLoaded = errors.New("xlsx: sheet not loaded")
+
 type row struct {
 	// each value must be one of: int, float64, string, or time.Time
 	cols []interface{}

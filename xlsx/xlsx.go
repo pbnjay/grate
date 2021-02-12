@@ -118,13 +118,6 @@ func Open(filename string) (grate.Source, error) {
 		}
 	}
 
-	for _, s := range d.sheets {
-		err = s.parseSheet()
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	return d, nil
 }
 
@@ -146,9 +139,7 @@ func (d *Document) openXML(name string) (*xml.Decoder, io.Closer, error) {
 func (d *Document) List() ([]string, error) {
 	res := make([]string, 0, len(d.sheets))
 	for _, s := range d.sheets {
-		//if (s.HiddenState & 0x03) == 0 {
 		res = append(res, s.name)
-		//}
 	}
 	return res, nil
 }
@@ -156,7 +147,10 @@ func (d *Document) List() ([]string, error) {
 func (d *Document) Get(sheetName string) (grate.Collection, error) {
 	for _, s := range d.sheets {
 		if s.name == sheetName {
-			return s, nil
+			if s.err == errNotLoaded {
+				s.err = s.parseSheet()
+			}
+			return s, s.err
 		}
 	}
 	return nil, errors.New("xlsx: sheet not found")
