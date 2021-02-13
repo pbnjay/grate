@@ -4,48 +4,53 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"io"
-	"io/ioutil"
 	"strings"
 	"unicode/utf16"
 )
 
-func decodeHyperlinks(r io.Reader) (displayText, linkText string, err error) {
-	var x uint64
-	binary.Read(r, binary.LittleEndian, &x) // skip and discard classid
-	binary.Read(r, binary.LittleEndian, &x)
-
-	var flags, slen uint32
-	binary.Read(r, binary.LittleEndian, &slen)
+func decodeHyperlinks(raw []byte) (displayText, linkText string, err error) {
+	raw = raw[16:] // skip classid
+	slen := binary.LittleEndian.Uint32(raw[:4])
 	if slen != 2 {
 		return "", "", errors.New("xls: unknown hyperlink version")
 	}
 
-	binary.Read(r, binary.LittleEndian, &flags)
+	flags := binary.LittleEndian.Uint32(raw[4:8])
+	raw = raw[8:]
 	if (flags & hlstmfHasDisplayName) != 0 {
-		binary.Read(r, binary.LittleEndian, &slen)
+		slen = binary.LittleEndian.Uint32(raw[:4])
+		raw = raw[4:]
 		us := make([]uint16, slen)
-		binary.Read(r, binary.LittleEndian, us)
+		for i := 0; i < int(slen); i++ {
+			us[i] = binary.LittleEndian.Uint16(raw)
+			raw = raw[2:]
+		}
 		displayText = string(utf16.Decode(us))
 	}
 
 	if (flags & hlstmfHasFrameName) != 0 {
 		// skip a HyperlinkString containing target Frame
-		binary.Read(r, binary.LittleEndian, &slen)
-		io.CopyN(ioutil.Discard, r, int64(slen*2))
+		slen = binary.LittleEndian.Uint32(raw[:4])
+		raw = raw[4+(slen*2):]
 	}
 
 	if (flags & hlstmfHasMoniker) != 0 {
 		if (flags & hlstmfMonikerSavedAsStr) != 0 {
 			// read HyperlinkString containing the URL
-			binary.Read(r, binary.LittleEndian, &slen)
+			slen = binary.LittleEndian.Uint32(raw[:4])
+			raw = raw[4:]
 			us := make([]uint16, slen)
-			binary.Read(r, binary.LittleEndian, us)
+			for i := 0; i < int(slen); i++ {
+				us[i] = binary.LittleEndian.Uint16(raw)
+				raw = raw[2:]
+			}
 			linkText = string(utf16.Decode(us))
 
 		} else {
+			n := 0
 			var err error
-			linkText, err = parseHyperlinkMoniker(r)
+			linkText, n, err = parseHyperlinkMoniker(raw)
+			raw = raw[n:]
 			if err != nil {
 				return "", "", err
 			}
@@ -53,9 +58,13 @@ func decodeHyperlinks(r io.Reader) (displayText, linkText string, err error) {
 	}
 
 	if (flags & hlstmfHasLocationStr) != 0 {
-		binary.Read(r, binary.LittleEndian, &slen)
+		slen = binary.LittleEndian.Uint32(raw[:4])
+		raw = raw[4:]
 		us := make([]uint16, slen)
-		binary.Read(r, binary.LittleEndian, us)
+		for i := 0; i < int(slen); i++ {
+			us[i] = binary.LittleEndian.Uint16(raw)
+			raw = raw[2:]
+		}
 		linkText = string(utf16.Decode(us))
 	}
 
@@ -64,15 +73,9 @@ func decodeHyperlinks(r io.Reader) (displayText, linkText string, err error) {
 	return
 }
 
-func parseHyperlinkMoniker(r io.Reader) (string, error) {
-	var classid [16]byte
-	n, err := r.Read(classid[:])
-	if err != nil {
-		return "", err
-	}
-	if n != 16 {
-		return "", io.ErrShortBuffer
-	}
+func parseHyperlinkMoniker(raw []byte) (string, int, error) {
+	classid := raw[:16]
+	no := 16
 
 	isURLMoniker := true
 	isFileMoniker := true
@@ -87,40 +90,45 @@ func parseHyperlinkMoniker(r io.Reader) (string, error) {
 		}
 	}
 	if isURLMoniker {
-		var length uint32
-		binary.Read(r, binary.LittleEndian, &length)
+		length := binary.LittleEndian.Uint32(raw[no:])
+		no += 4
 		length /= 2
 		buf := make([]uint16, length)
-		binary.Read(r, binary.LittleEndian, &buf)
+		for i := 0; i < int(length); i++ {
+			buf[i] = binary.LittleEndian.Uint16(raw[no:])
+			no += 2
+		}
 		if length > 12 && buf[length-13] == 0 {
 			buf = buf[:length-12]
 		}
-		return string(utf16.Decode(buf)), nil
+		return string(utf16.Decode(buf)), no, nil
 	}
 	if isFileMoniker {
-		var x uint16
-		var length uint32
-		binary.Read(r, binary.LittleEndian, &x)      //cAnti
-		binary.Read(r, binary.LittleEndian, &length) //ansiLength
-		buf := make([]byte, length)
-		binary.Read(r, binary.LittleEndian, &buf)
+		//x := binary.LittleEndian.Uint16(raw[no:])        //cAnti
+		length := binary.LittleEndian.Uint32(raw[no+2:]) //ansiLength
+		no += 6
+		buf := raw[no : no+int(length)]
 
-		// skip 24 bytes for misc fixed properties
-		io.CopyN(ioutil.Discard, r, 24)
+		// skip 24 more bytes for misc fixed properties
+		no += int(length) + 24
 
-		binary.Read(r, binary.LittleEndian, &length) // cbUnicodePathSize
+		length = binary.LittleEndian.Uint32(raw[no:]) // cbUnicodePathSize
+		no += 4
 		if length > 0 {
-			io.CopyN(ioutil.Discard, r, 6)
+			no += 6
 			length -= 6
 			buf2 := make([]uint16, length/2)
-			binary.Read(r, binary.LittleEndian, &buf2)
-			return string(utf16.Decode(buf2)), nil
+			for i := 0; i < int(length/2); i++ {
+				buf2[i] = binary.LittleEndian.Uint16(raw[no:])
+				no += 2
+			}
+			return string(utf16.Decode(buf2)), no, nil
 		}
 
-		return string(buf), nil
+		return string(buf), no, nil
 	}
 
-	return "", fmt.Errorf("xls: unknown moniker classid")
+	return "", 0, fmt.Errorf("xls: unknown moniker classid")
 }
 
 // HLink flags

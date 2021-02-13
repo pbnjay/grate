@@ -7,7 +7,6 @@ package xls
 // https://docs.microsoft.com/en-us/openspecs/office_file_formats/ms-xls/cd03cb5f-ca02-4934-a391-bb674cb8aa06
 
 import (
-	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -66,28 +65,29 @@ func Open(filename string) (grate.Source, error) {
 	if err != nil {
 		return nil, grate.WrapErr(err, grate.ErrNotInFormat)
 	}
-	err = b.loadFromStream(rdr)
+	raw, err := io.ReadAll(rdr)
+	if err != nil {
+		return nil, err
+	}
+
+	err = b.loadFromStream(raw)
 	return b, err
 }
 
-func (b *WorkBook) loadFromStream(r io.ReadSeeker) error {
-	return b.loadFromStream2(r, false)
+func (b *WorkBook) loadFromStream(raw []byte) error {
+	return b.loadFromStream2(raw, false)
 }
 
-func (b *WorkBook) loadFromStreamWithDecryptor(r io.ReadSeeker, dec crypto.Decryptor) error {
+func (b *WorkBook) loadFromStreamWithDecryptor(raw []byte, dec crypto.Decryptor) error {
 	if grate.Debug {
 		log.Println("  Decrypting xls stream with standard RC4")
 	}
-	_, err := r.Seek(0, io.SeekStart)
-	if err != nil {
-		log.Println("xls: dec-seek1 failed")
-		return err
-	}
 
+	pos := 0
 	zeros := [8224]byte{}
 
 	type overlay struct {
-		Pos int64
+		Pos int
 
 		RecType   recordType
 		DataBytes uint16
@@ -95,25 +95,13 @@ func (b *WorkBook) loadFromStreamWithDecryptor(r io.ReadSeeker, dec crypto.Decry
 	}
 	replaceBlocks := []overlay{}
 
-	obuf := &bytes.Buffer{}
-	for err == nil {
+	var err error
+	for err == nil && len(raw[pos:]) > 4 {
 		o := overlay{}
-		o.Pos, _ = r.Seek(0, io.SeekCurrent)
-
-		err = binary.Read(r, binary.LittleEndian, &o.RecType)
-		if err != nil {
-			if err == io.EOF {
-				continue
-			}
-			log.Println("xls: dec-read1 failed")
-			return err
-		}
-
-		err = binary.Read(r, binary.LittleEndian, &o.DataBytes)
-		if err != nil {
-			log.Println("xls: dec-read2 failed")
-			return err
-		}
+		o.Pos = pos
+		o.RecType = recordType(binary.LittleEndian.Uint16(raw[pos : pos+2]))
+		o.DataBytes = binary.LittleEndian.Uint16(raw[pos+2 : pos+4])
+		pos += 4
 
 		// copy to output and decryption stream
 		binary.Write(dec, binary.LittleEndian, o.RecType)
@@ -122,35 +110,29 @@ func (b *WorkBook) loadFromStreamWithDecryptor(r io.ReadSeeker, dec crypto.Decry
 
 		switch o.RecType {
 		case RecTypeBOF, RecTypeFilePass, RecTypeUsrExcl, RecTypeFileLock, RecTypeInterfaceHdr, RecTypeRRDInfo, RecTypeRRDHead:
-			// copy original data into output
-			o.Data = make([]byte, o.DataBytes)
-			_, err = io.ReadFull(r, o.Data)
-			if err != nil {
-				log.Println("FAIL err", err)
-			}
+			// untouched data goes directly into output
+			o.Data = raw[pos : pos+int(o.DataBytes)]
+			pos += int(o.DataBytes)
 			dec.Write(zeros[:int(o.DataBytes)])
 			tocopy = 0
 
 		case RecTypeBoundSheet8:
 			// copy 32-bit position to output
-			o.Data = make([]byte, 4)
-			_, err = io.ReadFull(r, o.Data)
-			if err != nil {
-				log.Println("FAIL err", err)
-			}
+			o.Data = raw[pos : pos+4]
+			pos += 4
 			dec.Write(zeros[:4])
 			tocopy -= 4
 		}
 
 		if tocopy > 0 {
-			_, err = io.CopyN(dec, r, int64(tocopy))
+			_, err = dec.Write(raw[pos : pos+tocopy])
+			pos += tocopy
 		}
 		replaceBlocks = append(replaceBlocks, o)
 	}
 	dec.Flush()
-	io.Copy(obuf, dec)
 
-	alldata := obuf.Bytes()
+	alldata := dec.Bytes()
 	for _, o := range replaceBlocks {
 		offs := int(o.Pos)
 		binary.LittleEndian.PutUint16(alldata[offs:], uint16(o.RecType))
@@ -161,18 +143,21 @@ func (b *WorkBook) loadFromStreamWithDecryptor(r io.ReadSeeker, dec crypto.Decry
 		}
 	}
 
-	return b.loadFromStream2(bytes.NewReader(alldata), true)
+	return b.loadFromStream2(alldata, true)
 }
 
-func (b *WorkBook) loadFromStream2(r io.ReadSeeker, isDecrypted bool) error {
+func (b *WorkBook) loadFromStream2(raw []byte, isDecrypted bool) error {
 	b.h = &header{}
 	substr := -1
 	nestedBOF := 0
 	b.substreams = b.substreams[:0]
 	b.pos2substream = make(map[int64]int, 10)
 	b.fpos = 0
-	nr, err := b.nextRecord(r)
+
+	rawfull := raw
+	nr, no, err := b.nextRecord(raw)
 	for err == nil {
+		raw = raw[no:]
 		switch nr.RecType {
 		case RecTypeEOF:
 			nestedBOF--
@@ -196,7 +181,7 @@ func (b *WorkBook) loadFromStream2(r io.ReadSeeker, isDecrypted bool) error {
 					log.Println("xls: rc4 encryption failed to set up", err)
 					return err
 				}
-				return b.loadFromStreamWithDecryptor(r, dec)
+				return b.loadFromStreamWithDecryptor(rawfull, dec)
 			case 2, 3, 4:
 				log.Println("need Crypto API RC4 decryptor")
 				return errors.New("xls: unsupported Crypto API encryption method")
@@ -206,7 +191,7 @@ func (b *WorkBook) loadFromStream2(r io.ReadSeeker, isDecrypted bool) error {
 		}
 
 		b.substreams[substr] = append(b.substreams[substr], nr)
-		nr, err = b.nextRecord(r)
+		nr, no, err = b.nextRecord(raw)
 	}
 	if err == io.EOF {
 		err = nil
@@ -220,7 +205,7 @@ func (b *WorkBook) loadFromStream2(r io.ReadSeeker, isDecrypted bool) error {
 			log.Printf("  Processing substream %d/%d (%d records)", ss, len(b.substreams), len(records))
 		}
 		for i, nr := range records {
-			var bb io.Reader = bytes.NewReader(nr.Data)
+			//var bb io.Reader = bytes.NewReader(nr.Data)
 
 			switch nr.RecType {
 			case RecTypeSST:
@@ -243,9 +228,12 @@ func (b *WorkBook) loadFromStream2(r io.ReadSeeker, isDecrypted bool) error {
 				// done
 
 			case RecTypeBOF:
-				err = binary.Read(bb, binary.LittleEndian, b.h)
-				if err != nil {
-					return err
+				b.h = &header{
+					Version:  binary.LittleEndian.Uint16(nr.Data[0:2]),
+					DocType:  binary.LittleEndian.Uint16(nr.Data[2:4]),
+					RupBuild: binary.LittleEndian.Uint16(nr.Data[4:6]),
+					RupYear:  binary.LittleEndian.Uint16(nr.Data[6:8]),
+					MiscBits: binary.LittleEndian.Uint64(nr.Data[8:16]),
 				}
 
 				if b.h.Version != 0x0600 {
@@ -261,21 +249,14 @@ func (b *WorkBook) loadFromStream2(r io.ReadSeeker, isDecrypted bool) error {
 				}
 
 			case RecTypeCodePage:
-				err = binary.Read(bb, binary.LittleEndian, &b.codepage)
-				if err != nil {
-					return err
-				}
+				b.codepage = binary.LittleEndian.Uint16(nr.Data)
 
 			case RecTypeDate1904:
-				err = binary.Read(bb, binary.LittleEndian, &b.dateMode)
-				if err != nil {
-					return err
-				}
+				b.dateMode = binary.LittleEndian.Uint16(nr.Data)
 
 			case RecTypeFormat:
-				var fmtNo uint16
-				err = binary.Read(bb, binary.LittleEndian, &fmtNo)
-				formatStr, err := decodeXLUnicodeString(bb)
+				fmtNo := binary.LittleEndian.Uint16(nr.Data)
+				formatStr, _, err := decodeXLUnicodeString(nr.Data[2:])
 				if err != nil {
 					log.Println("fail2", err)
 					return err
@@ -283,28 +264,17 @@ func (b *WorkBook) loadFromStream2(r io.ReadSeeker, isDecrypted bool) error {
 				b.nfmt.Add(fmtNo, formatStr)
 
 			case RecTypeXF:
-				var x, fmtNo uint16
-				err = binary.Read(bb, binary.LittleEndian, &x) // ignore font
-				err = binary.Read(bb, binary.LittleEndian, &fmtNo)
+				// ignore font id at nr.Data[0:2]
+				fmtNo := binary.LittleEndian.Uint16(nr.Data[2:])
 				b.xfs = append(b.xfs, fmtNo)
 
 			case RecTypeBoundSheet8:
 				bs := &boundSheet{}
-				err = binary.Read(bb, binary.LittleEndian, &bs.Position)
-				if err != nil {
-					return err
-				}
+				bs.Position = binary.LittleEndian.Uint32(nr.Data[:4])
+				bs.HiddenState = nr.Data[4]
+				bs.SheetType = nr.Data[5]
 
-				err = binary.Read(bb, binary.LittleEndian, &bs.HiddenState)
-				if err != nil {
-					return err
-				}
-				err = binary.Read(bb, binary.LittleEndian, &bs.SheetType)
-				if err != nil {
-					return err
-				}
-
-				bs.Name, err = decodeShortXLUnicodeString(bb)
+				bs.Name, _, err = decodeShortXLUnicodeString(nr.Data[6:])
 				if err != nil {
 					return err
 				}
@@ -320,31 +290,14 @@ func (b *WorkBook) loadFromStream2(r io.ReadSeeker, isDecrypted bool) error {
 	return err
 }
 
-func (b *WorkBook) nextRecord(r io.Reader) (*rec, error) {
-	var rt recordType
-	var rs uint16
-	err := binary.Read(r, binary.LittleEndian, &rt)
-	if err != nil {
-		return nil, err
+func (b *WorkBook) nextRecord(raw []byte) (*rec, int, error) {
+	if len(raw) < 4 {
+		return nil, 0, io.EOF
 	}
-	if rt == 0 {
-		return nil, io.EOF
+	rt := recordType(binary.LittleEndian.Uint16(raw[:2]))
+	rs := binary.LittleEndian.Uint16(raw[2:4])
+	if len(raw[4:]) < int(rs) {
+		return nil, 4, io.ErrUnexpectedEOF
 	}
-
-	err = binary.Read(r, binary.LittleEndian, &rs)
-	if rs > 8224 {
-		return nil, errors.New("xls: invalid data format")
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	data := make([]byte, rs)
-	_, err = io.ReadFull(r, data)
-	if err != nil {
-		return nil, err
-	}
-
-	ret := &rec{rt, rs, data}
-	return ret, err
+	return &rec{rt, rs, raw[4 : 4+rs]}, int(4 + rs), nil
 }

@@ -55,6 +55,9 @@ func addCommas(ff FmtFunc) FmtFunc {
 }
 
 func identFunc(x *Formatter, v interface{}) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
 	return fmt.Sprint(v)
 }
 

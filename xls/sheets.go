@@ -1,7 +1,6 @@
 package xls
 
 import (
-	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -91,9 +90,6 @@ func (s *WorkSheet) placeValue(rowIndex, colIndex int, val interface{}) {
 	// ensure we always have a complete matrix
 	for len(s.rows) <= rowIndex {
 		emptyRow := make([]interface{}, s.maxCol+1)
-		for i := 0; i <= s.maxCol; i++ {
-			emptyRow[i] = staticBlank
-		}
 		s.rows = append(s.rows, &row{emptyRow})
 	}
 
@@ -126,15 +122,11 @@ func (s *WorkSheet) parse() error {
 			}
 
 		case RecTypeDimensions:
-			bb := bytes.NewReader(r.Data)
-			var minRow, maxRow uint32
-			var minCol, maxCol uint16
-
 			// max = 0-based index of the row AFTER the last valid index
-			binary.Read(bb, binary.LittleEndian, &minRow)
-			binary.Read(bb, binary.LittleEndian, &maxRow) // max = 0x010000
-			binary.Read(bb, binary.LittleEndian, &minCol)
-			binary.Read(bb, binary.LittleEndian, &maxCol) // max = 0x000100
+			minRow := binary.LittleEndian.Uint32(r.Data[:4])
+			maxRow := binary.LittleEndian.Uint32(r.Data[4:8]) // max = 0x010000
+			minCol := binary.LittleEndian.Uint16(r.Data[8:10])
+			maxCol := binary.LittleEndian.Uint16(r.Data[10:12]) // max = 0x000100
 			if grate.Debug {
 				log.Printf("    Sheet dimensions (%d, %d) - (%d,%d)",
 					minCol, minRow, maxCol, maxRow)
@@ -153,18 +145,8 @@ func (s *WorkSheet) parse() error {
 				s.empty = true
 			} else {
 				// pre-allocate cells
-				s.placeValue(s.maxRow, s.maxCol, staticBlank)
+				s.placeValue(s.maxRow, s.maxCol, nil)
 			}
-
-		case RecTypeRow:
-			bb := bytes.NewReader(r.Data)
-			row := &shRow{}
-			binary.Read(bb, binary.LittleEndian, row)
-			if (row.Reserved & 0xFFFF) != 0 {
-				log.Println("invalid Row spec")
-				continue
-			}
-			//log.Printf("row spec: %+v", *row)
 		}
 	}
 	inSubstream = 0
@@ -179,8 +161,6 @@ func (s *WorkSheet) parse() error {
 			}
 			continue
 		}
-
-		bb := bytes.NewReader(r.Data)
 
 		// sec 2.1.7.20.6 Common Productions ABNF:
 		/*
@@ -199,17 +179,11 @@ func (s *WorkSheet) parse() error {
 				inSubstream++
 				continue
 			}
-		case RecTypeBlank:
-			var rowIndex, colIndex uint16
-			binary.Read(bb, binary.LittleEndian, &rowIndex)
-			binary.Read(bb, binary.LittleEndian, &colIndex)
-			//log.Printf("blank spec: %d %d", rowIndex, colIndex)
 
 		case RecTypeBoolErr:
-			var rowIndex, colIndex, ixfe uint16
-			binary.Read(bb, binary.LittleEndian, &rowIndex)
-			binary.Read(bb, binary.LittleEndian, &colIndex)
-			binary.Read(bb, binary.LittleEndian, &ixfe)
+			rowIndex := binary.LittleEndian.Uint16(r.Data[:2])
+			colIndex := binary.LittleEndian.Uint16(r.Data[2:4])
+			//ixfe := binary.LittleEndian.Uint16(r.Data[4:6])
 			if r.Data[7] == 0 {
 				bv := false
 				if r.Data[6] == 1 {
@@ -226,22 +200,17 @@ func (s *WorkSheet) parse() error {
 				//log.Printf("bool/error spec: %d %d %s", rowIndex, colIndex, be)
 			}
 
-		case RecTypeMulBlank:
-			var rowIndex, firstCol uint16
-			binary.Read(bb, binary.LittleEndian, &rowIndex)
-			binary.Read(bb, binary.LittleEndian, &firstCol)
-		//	nrk := int((r.RecSize - 6) / 6)
-		//	log.Printf("row blanks spec: %d %d %d", rowIndex, firstCol, nrk)
-
 		case RecTypeMulRk:
 			mr := &shMulRK{}
 			nrk := int((r.RecSize - 6) / 6)
-			binary.Read(bb, binary.LittleEndian, &mr.RowIndex)
-			binary.Read(bb, binary.LittleEndian, &mr.FirstCol)
+			mr.RowIndex = binary.LittleEndian.Uint16(r.Data[:2])
+			mr.FirstCol = binary.LittleEndian.Uint16(r.Data[2:4])
 			mr.Values = make([]RkRec, nrk)
 			for i := 0; i < nrk; i++ {
+				off := 4 + i*6
 				rr := RkRec{}
-				binary.Read(bb, binary.LittleEndian, &rr)
+				rr.IXFCell = binary.LittleEndian.Uint16(r.Data[off:])
+				rr.Value = RKNumber(binary.LittleEndian.Uint32(r.Data[off:]))
 				mr.Values[i] = rr
 
 				var rval interface{}
@@ -254,16 +223,14 @@ func (s *WorkSheet) parse() error {
 				}
 				s.placeValue(int(mr.RowIndex), int(mr.FirstCol)+i, rval)
 			}
-			binary.Read(bb, binary.LittleEndian, &mr.LastCol)
 			//log.Printf("mulrow spec: %+v", *mr)
 
 		case RecTypeNumber:
-			var rowIndex, colIndex, ixfe uint16
-			var xnum uint64
-			binary.Read(bb, binary.LittleEndian, &rowIndex)
-			binary.Read(bb, binary.LittleEndian, &colIndex)
-			binary.Read(bb, binary.LittleEndian, &ixfe)
-			binary.Read(bb, binary.LittleEndian, &xnum)
+			rowIndex := binary.LittleEndian.Uint16(r.Data[:2])
+			colIndex := binary.LittleEndian.Uint16(r.Data[2:4])
+			ixfe := binary.LittleEndian.Uint16(r.Data[4:6])
+			xnum := binary.LittleEndian.Uint64(r.Data[6:])
+
 			value := math.Float64frombits(xnum)
 			fno := s.b.xfs[ixfe]
 			rval, _ := s.b.nfmt.Apply(fno, value)
@@ -272,11 +239,11 @@ func (s *WorkSheet) parse() error {
 			//log.Printf("Number spec: %d %d = %f", rowIndex, colIndex, value)
 
 		case RecTypeRK:
-			var rowIndex, colIndex uint16
-			binary.Read(bb, binary.LittleEndian, &rowIndex)
-			binary.Read(bb, binary.LittleEndian, &colIndex)
+			rowIndex := binary.LittleEndian.Uint16(r.Data[:2])
+			colIndex := binary.LittleEndian.Uint16(r.Data[2:4])
 			rr := RkRec{}
-			binary.Read(bb, binary.LittleEndian, &rr)
+			rr.IXFCell = binary.LittleEndian.Uint16(r.Data[4:])
+			rr.Value = RKNumber(binary.LittleEndian.Uint32(r.Data[6:]))
 
 			var rval interface{}
 			if rr.Value.IsInteger() {
@@ -290,10 +257,9 @@ func (s *WorkSheet) parse() error {
 			//log.Printf("RK spec: %d %d = %s", rowIndex, colIndex, rr.Value.String())
 
 		case RecTypeFormula:
-			var ixfe uint16
-			binary.Read(bb, binary.LittleEndian, &formulaRow)
-			binary.Read(bb, binary.LittleEndian, &formulaCol)
-			binary.Read(bb, binary.LittleEndian, &ixfe)
+			formulaRow = binary.LittleEndian.Uint16(r.Data[:2])
+			formulaCol = binary.LittleEndian.Uint16(r.Data[2:4])
+			ixfe := binary.LittleEndian.Uint16(r.Data[4:6])
 			fdata := r.Data[6:]
 			if fdata[6] == 0xFF && r.Data[7] == 0xFF {
 				switch fdata[0] {
@@ -319,8 +285,7 @@ func (s *WorkSheet) parse() error {
 					log.Println("unknown formula value type")
 				}
 			} else {
-				var xnum uint64
-				binary.Read(bb, binary.LittleEndian, &xnum)
+				xnum := binary.LittleEndian.Uint64(r.Data[6:])
 				value := math.Float64frombits(xnum)
 				fno := s.b.xfs[ixfe]
 				rval, _ := s.b.nfmt.Apply(fno, value)
@@ -329,16 +294,18 @@ func (s *WorkSheet) parse() error {
 			//log.Printf("formula spec: %d %d ~~ %+v", formulaRow, formulaCol, r.Data)
 
 		case RecTypeString:
-			var charCount uint16
-			var flags byte
-			binary.Read(bb, binary.LittleEndian, &charCount)
-			binary.Read(bb, binary.LittleEndian, &flags)
+			charCount := binary.LittleEndian.Uint16(r.Data[:2])
+			flags := r.Data[2]
 			fstr := ""
 			if (flags & 1) == 0 {
 				fstr = string(r.Data[3:])
 			} else {
+				raw := r.Data[3:]
 				us := make([]uint16, charCount)
-				binary.Read(bb, binary.LittleEndian, us)
+				for i := 0; i < int(charCount); i++ {
+					us[i] = binary.LittleEndian.Uint16(raw)
+					raw = raw[2:]
+				}
 				fstr = string(utf16.Decode(us))
 			}
 
@@ -353,9 +320,13 @@ func (s *WorkSheet) parse() error {
 					if (r2.Data[0] & 1) == 0 {
 						fstr += string(r2.Data[1:])
 					} else {
-						bb2 := bytes.NewReader(r2.Data[1:])
-						us := make([]uint16, len(r2.Data)-1)
-						binary.Read(bb2, binary.LittleEndian, us)
+						raw := r2.Data[1:]
+						slen := len(raw) / 2
+						us := make([]uint16, slen)
+						for i := 0; i < slen; i++ {
+							us[i] = binary.LittleEndian.Uint16(raw)
+							raw = raw[2:]
+						}
 						fstr += string(utf16.Decode(us))
 					}
 					ridx2++
@@ -365,12 +336,10 @@ func (s *WorkSheet) parse() error {
 			s.placeValue(int(formulaRow), int(formulaCol), fstr)
 
 		case RecTypeLabelSst:
-			var rowIndex, colIndex, ixfe uint16
-			var sstIndex uint32
-			binary.Read(bb, binary.LittleEndian, &rowIndex)
-			binary.Read(bb, binary.LittleEndian, &colIndex)
-			binary.Read(bb, binary.LittleEndian, &ixfe)
-			binary.Read(bb, binary.LittleEndian, &sstIndex)
+			rowIndex := binary.LittleEndian.Uint16(r.Data[:2])
+			colIndex := binary.LittleEndian.Uint16(r.Data[2:4])
+			//ixfe := binary.LittleEndian.Uint16(r.Data[4:6])
+			sstIndex := binary.LittleEndian.Uint32(r.Data[6:])
 			if int(sstIndex) > len(s.b.strings) {
 				return errors.New("xls: invalid sst index")
 			}
@@ -379,7 +348,10 @@ func (s *WorkSheet) parse() error {
 
 		case RecTypeHLink:
 			loc := &shRef8{}
-			binary.Read(bb, binary.LittleEndian, loc)
+			loc.FirstRow = binary.LittleEndian.Uint16(r.Data[:2])
+			loc.LastRow = binary.LittleEndian.Uint16(r.Data[2:4])
+			loc.FirstCol = binary.LittleEndian.Uint16(r.Data[4:6])
+			loc.LastCol = binary.LittleEndian.Uint16(r.Data[6:])
 			if int(loc.FirstCol) > s.maxCol {
 				//log.Println("invalid hyperlink column")
 				continue
@@ -395,7 +367,7 @@ func (s *WorkSheet) parse() error {
 				loc.LastCol = uint16(s.maxCol)
 			}
 
-			displayText, linkText, err := decodeHyperlinks(bb)
+			displayText, linkText, err := decodeHyperlinks(r.Data[8:])
 			if err != nil {
 				log.Println(err)
 				continue
@@ -423,11 +395,16 @@ func (s *WorkSheet) parse() error {
 			}
 
 		case RecTypeMergeCells:
-			var cmcs uint16
-			binary.Read(bb, binary.LittleEndian, &cmcs)
-			mcRefs := make([]shRef8, cmcs)
-			binary.Read(bb, binary.LittleEndian, &mcRefs)
-			for _, loc := range mcRefs {
+			cmcs := binary.LittleEndian.Uint16(r.Data[:2])
+			raw := r.Data[2:]
+			loc := shRef8{}
+			for i := 0; i < int(cmcs); i++ {
+				loc.FirstRow = binary.LittleEndian.Uint16(raw[:2])
+				loc.LastRow = binary.LittleEndian.Uint16(raw[2:4])
+				loc.FirstCol = binary.LittleEndian.Uint16(raw[4:6])
+				loc.LastCol = binary.LittleEndian.Uint16(raw[6:])
+				raw = raw[8:]
+
 				if loc.LastRow == 0xFFFF {
 					loc.LastRow = uint16(s.maxRow)
 				}
@@ -454,16 +431,21 @@ func (s *WorkSheet) parse() error {
 					}
 				}
 			}
+			/*
+				case RecTypeBlank, RecTypeMulBlank:
+					// cells default value is blank, no need for these
 
-		case RecTypeContinue:
-			// the only situation so far is when used in RecTypeString above
+				case RecTypeContinue:
+					// the only situation so far is when used in RecTypeString above
 
-		case RecTypeRow, RecTypeDimensions, RecTypeEOF, RecTypeWsBool:
-			// handled in initial pass
-		default:
-			if grate.Debug {
-				log.Println("    Unhandled sheet record type:", r.RecType, ridx)
-			}
+				case RecTypeRow, RecTypeDimensions, RecTypeEOF, RecTypeWsBool:
+					// handled in initial pass
+
+				default:
+					if grate.Debug {
+						log.Println("    Unhandled sheet record type:", r.RecType, ridx)
+					}
+			*/
 		}
 	}
 	return nil
@@ -485,6 +467,9 @@ func (s *WorkSheet) Strings() []string {
 	currow := s.rows[s.iterRow]
 	res := make([]string, len(currow.cols))
 	for i, col := range currow.cols {
+		if col == nil || col == "" {
+			continue
+		}
 		res[i] = fmt.Sprint(col)
 	}
 	return res

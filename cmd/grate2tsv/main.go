@@ -42,11 +42,9 @@ func main() {
 			log.Fatal(err)
 		}
 		defer func() {
-			runtime.GC() // get up-to-date statistics
-			if err := pprof.WriteHeapProfile(f); err != nil {
-				log.Fatal("could not write memory profile: ", err)
-			}
-			f.Close() // error handling omitted for example
+			runtime.GC()
+			pprof.WriteHeapProfile(f)
+			f.Close()
 		}()
 	}
 

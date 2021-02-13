@@ -92,6 +92,10 @@ type rc4Writer struct {
 	Password []rune
 }
 
+func (d *rc4Writer) Bytes() []byte {
+	return d.buf.Bytes()
+}
+
 func (d *rc4Writer) Verify(everifier, everifierHash []byte) error {
 	d.Reset()
 	d.startBlock()

@@ -217,9 +217,6 @@ func (s *Sheet) placeValue(rowIndex, colIndex int, val interface{}) {
 	// ensure we always have a complete matrix
 	for len(s.rows) <= rowIndex {
 		emptyRow := make([]interface{}, s.maxCol+1)
-		for i := 0; i <= s.maxCol; i++ {
-			emptyRow[i] = staticBlank
-		}
 		s.rows = append(s.rows, &row{emptyRow})
 	}
 	s.empty = false
@@ -237,6 +234,9 @@ func (s *Sheet) Strings() []string {
 	currow := s.rows[s.iterRow]
 	res := make([]string, len(currow.cols))
 	for i, col := range currow.cols {
+		if col == nil || col == "" {
+			continue
+		}
 		res[i] = fmt.Sprint(col)
 	}
 	return res

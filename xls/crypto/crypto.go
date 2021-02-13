@@ -17,6 +17,9 @@ type Decryptor interface {
 	// Write implements the io.Writer interface.
 	Write(p []byte) (n int, err error)
 
+	// Bytes returns the decrypted data.
+	Bytes() []byte
+
 	// Flush tells the decryptor to decrypt the latest block.
 	Flush()
 
