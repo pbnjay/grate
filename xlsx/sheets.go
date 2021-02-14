@@ -123,8 +123,13 @@ func (s *Sheet) parseSheet() error {
 					continue
 				}
 				dims := strings.Split(ax[0], ":")
-				s.minCol, s.minRow = refToIndexes(dims[0])
-				s.maxCol, s.maxRow = refToIndexes(dims[1])
+				if len(dims) == 1 {
+					s.minCol, s.minRow = 0, 0
+					s.maxCol, s.maxRow = refToIndexes(dims[0])
+				} else {
+					s.minCol, s.minRow = refToIndexes(dims[0])
+					s.maxCol, s.maxRow = refToIndexes(dims[1])
+				}
 				//log.Println("DIMENSION:", s.minRow, s.minCol, ">", s.maxRow, s.maxCol)
 			case "row":
 				//currentRow = ax["r"] // unsigned int row index
@@ -147,7 +152,10 @@ func (s *Sheet) parseSheet() error {
 				ax := getAttrs(v.Attr, "ref")
 				dims := strings.Split(ax[0], ":")
 				startCol, startRow := refToIndexes(dims[0])
-				endCol, endRow := refToIndexes(dims[1])
+				endCol, endRow := startCol, startRow
+				if len(dims) > 1 {
+					endCol, endRow = refToIndexes(dims[1])
+				}
 				for r := startRow; r <= endRow; r++ {
 					for c := startCol; c <= endCol; c++ {
 						if r == startRow && c == startCol {
