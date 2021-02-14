@@ -1,0 +1,5 @@
+cmd/grate2tsv/results
+testdata
+
+*.pprof
+*.pdf

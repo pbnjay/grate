@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-
-	"github.com/pbnjay/grate"
 )
 
 // Open a Compound File Binary Format document.
@@ -17,7 +15,7 @@ func Open(filename string) (*Document, error) {
 	}
 	err = d.load(f)
 	if err != nil {
-		return nil, grate.WrapErr(err, grate.ErrNotInFormat)
+		return nil, err
 	}
 	return d, nil
 }

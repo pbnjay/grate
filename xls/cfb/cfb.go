@@ -14,6 +14,8 @@ import (
 	"io/ioutil"
 	"log"
 	"unicode/utf16"
+
+	"github.com/pbnjay/grate"
 )
 
 const fullAssertions = true
@@ -111,14 +113,14 @@ func (d *Document) load(rx io.ReadSeeker) error {
 	h := &header{}
 	err = binary.Read(br, binary.LittleEndian, h)
 	if h.Signature != 0xe11ab1a1e011cfd0 {
-		return errors.New("ole2: invalid format")
+		return grate.ErrNotInFormat // errors.New("ole2: invalid format")
 	}
 	if h.ByteOrder != 0xFFFE {
-		return errors.New("ole2: invalid format")
+		return grate.ErrNotInFormat //errors.New("ole2: invalid format")
 	}
 	if fullAssertions {
 		if h.ClassID[0] != 0 || h.ClassID[1] != 0 {
-			return errors.New("ole2: invalid CLSID")
+			return grate.ErrNotInFormat //errors.New("ole2: invalid CLSID")
 		}
 		if h.MajorVersion != 3 && h.MajorVersion != 4 {
 			return errors.New("ole2: unknown major version")

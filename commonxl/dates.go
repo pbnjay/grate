@@ -1,7 +1,6 @@
 package commonxl
 
 import (
-	"log"
 	"strings"
 	"time"
 )
@@ -55,7 +54,7 @@ func timeFmtFunc(f string) FmtFunc {
 			}
 			t = x.ConvertToDate(fval)
 		}
-		log.Println("formatting date", t, "with", f, "=", t.Format(f))
+		//log.Println("formatting date", t, "with", f, "=", t.Format(f))
 		return t.Format(f)
 	}
 }

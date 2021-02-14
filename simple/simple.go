@@ -3,6 +3,7 @@ package simple
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -19,7 +20,7 @@ type simpleFile struct {
 
 // List the individual data tables within this source.
 func (t *simpleFile) List() ([]string, error) {
-	return []string{t.filename}, nil
+	return []string{filepath.Base(t.filename)}, nil
 }
 
 func (t *simpleFile) Close() error {
