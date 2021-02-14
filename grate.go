@@ -15,6 +15,9 @@ type Source interface {
 
 	// Get a Collection from the source by name.
 	Get(name string) (Collection, error)
+
+	// Close the source and discard memory.
+	Close() error
 }
 
 // Collection represents an iterable collection of records.

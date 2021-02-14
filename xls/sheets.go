@@ -81,17 +81,26 @@ type row struct {
 	cols []interface{}
 }
 
+func (s *WorkSheet) makeCells() {
+	// ensure we always have a complete matrix
+	for len(s.rows) <= s.maxRow {
+		emptyRow := make([]interface{}, s.maxCol+1)
+		s.rows = append(s.rows, &row{emptyRow})
+	}
+}
+
 func (s *WorkSheet) placeValue(rowIndex, colIndex int, val interface{}) {
 	if colIndex > s.maxCol || rowIndex > s.maxRow {
 		// invalid
 		return
 	}
-
-	// ensure we always have a complete matrix
-	for len(s.rows) <= rowIndex {
-		emptyRow := make([]interface{}, s.maxCol+1)
-		s.rows = append(s.rows, &row{emptyRow})
-	}
+	/*
+		// ensure we always have a complete matrix
+		for len(s.rows) <= rowIndex {
+			emptyRow := make([]interface{}, s.maxCol+1)
+			s.rows = append(s.rows, &row{emptyRow})
+		}
+	*/
 
 	s.rows[rowIndex].cols[colIndex] = val
 }
@@ -101,6 +110,9 @@ func (s *WorkSheet) IsEmpty() bool {
 }
 
 func (s *WorkSheet) parse() error {
+	// temporary string buffer
+	us := make([]uint16, 8224)
+
 	inSubstream := 0
 	for idx, r := range s.b.substreams[s.ss] {
 		if inSubstream > 0 {
@@ -145,7 +157,8 @@ func (s *WorkSheet) parse() error {
 				s.empty = true
 			} else {
 				// pre-allocate cells
-				s.placeValue(s.maxRow, s.maxCol, nil)
+				s.makeCells()
+				//s.placeValue(s.maxRow, s.maxCol, nil)
 			}
 		}
 	}
@@ -181,79 +194,74 @@ func (s *WorkSheet) parse() error {
 			}
 
 		case RecTypeBoolErr:
-			rowIndex := binary.LittleEndian.Uint16(r.Data[:2])
-			colIndex := binary.LittleEndian.Uint16(r.Data[2:4])
+			rowIndex := int(binary.LittleEndian.Uint16(r.Data[:2]))
+			colIndex := int(binary.LittleEndian.Uint16(r.Data[2:4]))
 			//ixfe := binary.LittleEndian.Uint16(r.Data[4:6])
 			if r.Data[7] == 0 {
 				bv := false
 				if r.Data[6] == 1 {
 					bv = true
 				}
-				s.placeValue(int(rowIndex), int(colIndex), bv)
+				s.placeValue(rowIndex, colIndex, bv)
 				//log.Printf("bool/error spec: %d %d %+v", rowIndex, colIndex, bv)
 			} else {
 				be, ok := berrLookup[r.Data[6]]
 				if !ok {
 					be = "<unknown error>"
 				}
-				s.placeValue(int(rowIndex), int(colIndex), be)
+				s.placeValue(rowIndex, colIndex, be)
 				//log.Printf("bool/error spec: %d %d %s", rowIndex, colIndex, be)
 			}
 
 		case RecTypeMulRk:
-			mr := &shMulRK{}
 			nrk := int((r.RecSize - 6) / 6)
-			mr.RowIndex = binary.LittleEndian.Uint16(r.Data[:2])
-			mr.FirstCol = binary.LittleEndian.Uint16(r.Data[2:4])
-			mr.Values = make([]RkRec, nrk)
+			rowIndex := int(binary.LittleEndian.Uint16(r.Data[:2]))
+			colIndex := int(binary.LittleEndian.Uint16(r.Data[2:4]))
 			for i := 0; i < nrk; i++ {
 				off := 4 + i*6
-				rr := RkRec{}
-				rr.IXFCell = binary.LittleEndian.Uint16(r.Data[off:])
-				rr.Value = RKNumber(binary.LittleEndian.Uint32(r.Data[off:]))
-				mr.Values[i] = rr
+				ixfe := binary.LittleEndian.Uint16(r.Data[off:])
+				value := RKNumber(binary.LittleEndian.Uint32(r.Data[off:]))
 
 				var rval interface{}
-				if rr.Value.IsInteger() {
-					rval = rr.Value.Int()
+				if value.IsInteger() {
+					rval = value.Int()
 				} else {
-					rval = rr.Value.Float64()
-					fno := s.b.xfs[rr.IXFCell]
+					rval = value.Float64()
+					fno := s.b.xfs[ixfe]
 					rval, _ = s.b.nfmt.Apply(fno, rval)
 				}
-				s.placeValue(int(mr.RowIndex), int(mr.FirstCol)+i, rval)
+				s.placeValue(rowIndex, colIndex+i, rval)
 			}
 			//log.Printf("mulrow spec: %+v", *mr)
 
 		case RecTypeNumber:
-			rowIndex := binary.LittleEndian.Uint16(r.Data[:2])
-			colIndex := binary.LittleEndian.Uint16(r.Data[2:4])
-			ixfe := binary.LittleEndian.Uint16(r.Data[4:6])
+			rowIndex := int(binary.LittleEndian.Uint16(r.Data[:2]))
+			colIndex := int(binary.LittleEndian.Uint16(r.Data[2:4]))
+			ixfe := int(binary.LittleEndian.Uint16(r.Data[4:6]))
 			xnum := binary.LittleEndian.Uint64(r.Data[6:])
 
 			value := math.Float64frombits(xnum)
 			fno := s.b.xfs[ixfe]
 			rval, _ := s.b.nfmt.Apply(fno, value)
 
-			s.placeValue(int(rowIndex), int(colIndex), rval)
+			s.placeValue(rowIndex, colIndex, rval)
 			//log.Printf("Number spec: %d %d = %f", rowIndex, colIndex, value)
 
 		case RecTypeRK:
-			rowIndex := binary.LittleEndian.Uint16(r.Data[:2])
-			colIndex := binary.LittleEndian.Uint16(r.Data[2:4])
-			rr := RkRec{}
-			rr.IXFCell = binary.LittleEndian.Uint16(r.Data[4:])
-			rr.Value = RKNumber(binary.LittleEndian.Uint32(r.Data[6:]))
+			rowIndex := int(binary.LittleEndian.Uint16(r.Data[:2]))
+			colIndex := int(binary.LittleEndian.Uint16(r.Data[2:4]))
+			ixfe := int(binary.LittleEndian.Uint16(r.Data[4:]))
+			value := RKNumber(binary.LittleEndian.Uint32(r.Data[6:]))
 
 			var rval interface{}
-			if rr.Value.IsInteger() {
-				rval = rr.Value.Int()
+			if value.IsInteger() {
+				rval = value.Int()
 			} else {
-				rval = rr.Value.Float64()
-				fno := s.b.xfs[rr.IXFCell]
+				rval = value.Float64()
+				fno := s.b.xfs[ixfe]
 				rval, _ = s.b.nfmt.Apply(fno, rval)
 			}
-			s.placeValue(int(rowIndex), int(colIndex), rval)
+			s.placeValue(rowIndex, colIndex, rval)
 			//log.Printf("RK spec: %d %d = %s", rowIndex, colIndex, rr.Value.String())
 
 		case RecTypeFormula:
@@ -301,7 +309,10 @@ func (s *WorkSheet) parse() error {
 				fstr = string(r.Data[3:])
 			} else {
 				raw := r.Data[3:]
-				us := make([]uint16, charCount)
+				if int(charCount) > cap(us) {
+					us = make([]uint16, charCount)
+				}
+				us = us[:charCount]
 				for i := 0; i < int(charCount); i++ {
 					us[i] = binary.LittleEndian.Uint16(raw)
 					raw = raw[2:]
@@ -322,7 +333,7 @@ func (s *WorkSheet) parse() error {
 					} else {
 						raw := r2.Data[1:]
 						slen := len(raw) / 2
-						us := make([]uint16, slen)
+						us = us[:slen]
 						for i := 0; i < slen; i++ {
 							us[i] = binary.LittleEndian.Uint16(raw)
 							raw = raw[2:]
@@ -336,35 +347,34 @@ func (s *WorkSheet) parse() error {
 			s.placeValue(int(formulaRow), int(formulaCol), fstr)
 
 		case RecTypeLabelSst:
-			rowIndex := binary.LittleEndian.Uint16(r.Data[:2])
-			colIndex := binary.LittleEndian.Uint16(r.Data[2:4])
+			rowIndex := int(binary.LittleEndian.Uint16(r.Data[:2]))
+			colIndex := int(binary.LittleEndian.Uint16(r.Data[2:4]))
 			//ixfe := binary.LittleEndian.Uint16(r.Data[4:6])
-			sstIndex := binary.LittleEndian.Uint32(r.Data[6:])
-			if int(sstIndex) > len(s.b.strings) {
+			sstIndex := int(binary.LittleEndian.Uint32(r.Data[6:]))
+			if sstIndex > len(s.b.strings) {
 				return errors.New("xls: invalid sst index")
 			}
-			s.placeValue(int(rowIndex), int(colIndex), s.b.strings[sstIndex])
+			s.placeValue(rowIndex, colIndex, s.b.strings[sstIndex])
 			//log.Printf("SST spec: %d %d = [%d] %s", rowIndex, colIndex, sstIndex, s.b.strings[sstIndex])
 
 		case RecTypeHLink:
-			loc := &shRef8{}
-			loc.FirstRow = binary.LittleEndian.Uint16(r.Data[:2])
-			loc.LastRow = binary.LittleEndian.Uint16(r.Data[2:4])
-			loc.FirstCol = binary.LittleEndian.Uint16(r.Data[4:6])
-			loc.LastCol = binary.LittleEndian.Uint16(r.Data[6:])
-			if int(loc.FirstCol) > s.maxCol {
+			firstRow := binary.LittleEndian.Uint16(r.Data[:2])
+			lastRow := binary.LittleEndian.Uint16(r.Data[2:4])
+			firstCol := binary.LittleEndian.Uint16(r.Data[4:6])
+			lastCol := binary.LittleEndian.Uint16(r.Data[6:])
+			if int(firstCol) > s.maxCol {
 				//log.Println("invalid hyperlink column")
 				continue
 			}
-			if int(loc.FirstRow) > s.maxRow {
+			if int(firstRow) > s.maxRow {
 				//log.Println("invalid hyperlink row")
 				continue
 			}
-			if loc.LastRow == 0xFFFF {
-				loc.LastRow = uint16(s.maxRow)
+			if lastRow == 0xFFFF {
+				lastRow = uint16(s.maxRow)
 			}
-			if loc.LastCol == 0xFF {
-				loc.LastCol = uint16(s.maxCol)
+			if lastCol == 0xFF {
+				lastCol = uint16(s.maxCol)
 			}
 
 			displayText, linkText, err := decodeHyperlinks(r.Data[8:])
@@ -374,18 +384,18 @@ func (s *WorkSheet) parse() error {
 			}
 
 			// apply merge cell rules
-			for rn := int(loc.FirstRow); rn <= int(loc.LastRow); rn++ {
-				for cn := int(loc.FirstCol); cn <= int(loc.LastCol); cn++ {
-					if rn == int(loc.FirstRow) && cn == int(loc.FirstCol) {
+			for rn := int(firstRow); rn <= int(lastRow); rn++ {
+				for cn := int(firstCol); cn <= int(lastCol); cn++ {
+					if rn == int(firstRow) && cn == int(firstCol) {
 						s.placeValue(rn, cn, displayText+" <"+linkText+">")
-					} else if cn == int(loc.FirstCol) {
+					} else if cn == int(firstCol) {
 						// first and last column MAY be the same
-						if rn == int(loc.LastRow) {
+						if rn == int(lastRow) {
 							s.placeValue(rn, cn, endRowMerged)
 						} else {
 							s.placeValue(rn, cn, continueRowMerged)
 						}
-					} else if cn == int(loc.LastCol) {
+					} else if cn == int(lastCol) {
 						// first and last column are NOT the same
 						s.placeValue(rn, cn, endColumnMerged)
 					} else {
@@ -397,32 +407,31 @@ func (s *WorkSheet) parse() error {
 		case RecTypeMergeCells:
 			cmcs := binary.LittleEndian.Uint16(r.Data[:2])
 			raw := r.Data[2:]
-			loc := shRef8{}
 			for i := 0; i < int(cmcs); i++ {
-				loc.FirstRow = binary.LittleEndian.Uint16(raw[:2])
-				loc.LastRow = binary.LittleEndian.Uint16(raw[2:4])
-				loc.FirstCol = binary.LittleEndian.Uint16(raw[4:6])
-				loc.LastCol = binary.LittleEndian.Uint16(raw[6:])
+				firstRow := binary.LittleEndian.Uint16(r.Data[:2])
+				lastRow := binary.LittleEndian.Uint16(r.Data[2:4])
+				firstCol := binary.LittleEndian.Uint16(r.Data[4:6])
+				lastCol := binary.LittleEndian.Uint16(r.Data[6:])
 				raw = raw[8:]
 
-				if loc.LastRow == 0xFFFF {
-					loc.LastRow = uint16(s.maxRow)
+				if lastRow == 0xFFFF {
+					lastRow = uint16(s.maxRow)
 				}
-				if loc.LastCol == 0xFF {
-					loc.LastCol = uint16(s.maxCol)
+				if lastCol == 0xFF {
+					lastCol = uint16(s.maxCol)
 				}
-				for rn := int(loc.FirstRow); rn <= int(loc.LastRow); rn++ {
-					for cn := int(loc.FirstCol); cn <= int(loc.LastCol); cn++ {
-						if rn == int(loc.FirstRow) && cn == int(loc.FirstCol) {
+				for rn := int(firstRow); rn <= int(lastRow); rn++ {
+					for cn := int(firstCol); cn <= int(lastCol); cn++ {
+						if rn == int(firstRow) && cn == int(firstCol) {
 							// should be a value there already!
-						} else if cn == int(loc.FirstCol) {
+						} else if cn == int(firstCol) {
 							// first and last column MAY be the same
-							if rn == int(loc.LastRow) {
+							if rn == int(lastRow) {
 								s.placeValue(rn, cn, endRowMerged)
 							} else {
 								s.placeValue(rn, cn, continueRowMerged)
 							}
-						} else if cn == int(loc.LastCol) {
+						} else if cn == int(lastCol) {
 							// first and last column are NOT the same
 							s.placeValue(rn, cn, endColumnMerged)
 						} else {

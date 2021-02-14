@@ -139,12 +139,12 @@ func parseSST(recs []*rec) ([]string, error) {
 	numStrings := binary.LittleEndian.Uint32(recs[0].Data[4:8])
 
 	all := make([]string, 0, numStrings)
+	current := make([]uint16, 32*1024)
 
 	buf := recs[0].Data[8:]
 	for i := 0; i < len(recs); {
 		var cRunBytes int
 		var flags byte
-		var current []uint16
 		var cbExtRs uint32
 
 		for len(buf) > 0 {
@@ -177,7 +177,11 @@ func parseSST(recs []*rec) ([]string, error) {
 
 			// this block will read the string data, but transparently
 			// handle continuing across records
-			current = make([]uint16, slen)
+			if int(slen) > cap(current) {
+				current = make([]uint16, slen)
+			} else {
+				current = current[:slen]
+			}
 			for j := 0; j < int(slen); j++ {
 				if len(buf) == 0 {
 					i++

@@ -19,6 +19,7 @@ var _ = grate.Register("xlsx", 5, Open)
 // Document contains an Office Open XML document.
 type Document struct {
 	filename   string
+	f          *os.File
 	r          *zip.Reader
 	primaryDoc string
 
@@ -28,6 +29,16 @@ type Document struct {
 	strings []string
 	xfs     []commonxl.FmtFunc
 	fmt     commonxl.Formatter
+}
+
+func (d *Document) Close() error {
+	d.xfs = d.xfs[:0]
+	d.xfs = nil
+	d.strings = d.strings[:0]
+	d.strings = nil
+	d.sheets = d.sheets[:0]
+	d.sheets = nil
+	return d.f.Close()
 }
 
 func Open(filename string) (grate.Source, error) {
@@ -45,6 +56,7 @@ func Open(filename string) (grate.Source, error) {
 	}
 	d := &Document{
 		filename: filename,
+		f:        f,
 		r:        z,
 	}
 

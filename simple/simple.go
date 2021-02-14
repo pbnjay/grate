@@ -22,6 +22,10 @@ func (t *simpleFile) List() ([]string, error) {
 	return []string{t.filename}, nil
 }
 
+func (t *simpleFile) Close() error {
+	return nil
+}
+
 // Get a Collection from the source by name.
 func (t *simpleFile) Get(name string) (grate.Collection, error) {
 	return t, nil

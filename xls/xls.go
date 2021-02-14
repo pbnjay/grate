@@ -12,6 +12,7 @@ import (
 	"errors"
 	"io"
 	"log"
+	"sync"
 
 	"github.com/pbnjay/grate"
 	"github.com/pbnjay/grate/commonxl"
@@ -146,13 +147,34 @@ func (b *WorkBook) loadFromStreamWithDecryptor(raw []byte, dec crypto.Decryptor)
 	return b.loadFromStream2(alldata, true)
 }
 
+func (b *WorkBook) Close() error {
+	// return records to the pool for reuse
+	for i, sub := range b.substreams {
+		for _, r := range sub {
+			r.Data = nil // allow GC
+			recPool.Put(r)
+		}
+		b.substreams[i] = b.substreams[i][:0]
+	}
+	b.substreams = b.substreams[:0]
+	return nil
+}
+
 func (b *WorkBook) loadFromStream2(raw []byte, isDecrypted bool) error {
 	b.h = &header{}
 	substr := -1
 	nestedBOF := 0
-	b.substreams = b.substreams[:0]
 	b.pos2substream = make(map[int64]int, 10)
 	b.fpos = 0
+
+	// IMPORTANT: if there are any existing record, we need to return them to the pool
+	for i, sub := range b.substreams {
+		for _, r := range sub {
+			recPool.Put(r)
+		}
+		b.substreams[i] = b.substreams[i][:0]
+	}
+	b.substreams = b.substreams[:0]
 
 	rawfull := raw
 	nr, no, err := b.nextRecord(raw)
@@ -290,14 +312,24 @@ func (b *WorkBook) loadFromStream2(raw []byte, isDecrypted bool) error {
 	return err
 }
 
+var recPool = sync.Pool{
+	New: func() interface{} {
+		return &rec{}
+	},
+}
+
 func (b *WorkBook) nextRecord(raw []byte) (*rec, int, error) {
 	if len(raw) < 4 {
 		return nil, 0, io.EOF
 	}
-	rt := recordType(binary.LittleEndian.Uint16(raw[:2]))
-	rs := binary.LittleEndian.Uint16(raw[2:4])
-	if len(raw[4:]) < int(rs) {
+	rec := recPool.Get().(*rec)
+
+	rec.RecType = recordType(binary.LittleEndian.Uint16(raw[:2]))
+	rec.RecSize = binary.LittleEndian.Uint16(raw[2:4])
+	if len(raw[4:]) < int(rec.RecSize) {
+		recPool.Put(rec)
 		return nil, 4, io.ErrUnexpectedEOF
 	}
-	return &rec{rt, rs, raw[4 : 4+rs]}, int(4 + rs), nil
+	rec.Data = raw[4 : 4+rec.RecSize]
+	return rec, int(4 + rec.RecSize), nil
 }
