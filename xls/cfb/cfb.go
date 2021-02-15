@@ -289,6 +289,9 @@ func (d *Document) getStreamReader(sid uint32, size uint64) (io.ReadSeeker, erro
 	secSize := int64(1) << int32(d.header.SectorShift)
 	for sid != secEndOfChain && sid != secFree {
 		offs := int64(1+sid) << int64(d.header.SectorShift)
+		if offs > int64(len(d.data)) {
+			return nil, errors.New("ole2: corrupt data format")
+		}
 		slice := d.data[offs : offs+secSize]
 		if size < uint64(len(slice)) {
 			slice = slice[:size]

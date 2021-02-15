@@ -143,7 +143,11 @@ func (s *Sheet) parseSheet() error {
 				currentCell = ax[1] // always an A1 style reference
 				style := ax[2]
 				sid, _ := strconv.ParseInt(style, 10, 64)
-				numFormat = s.d.xfs[sid] // unsigned integer lookup
+				if len(s.d.xfs) > int(sid) {
+					numFormat = s.d.xfs[sid] // unsigned integer lookup
+				} else {
+					numFormat = s.d.xfs[0]
+				}
 				//log.Println("CELL", currentCell, sid, numFormat, currentCellType)
 			case "v":
 				//log.Println("CELL VALUE", ax)

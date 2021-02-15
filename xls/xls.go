@@ -227,6 +227,9 @@ func (b *WorkBook) loadFromStream2(raw []byte, isDecrypted bool) error {
 			log.Printf("  Processing substream %d/%d (%d records)", ss, len(b.substreams), len(records))
 		}
 		for i, nr := range records {
+			if len(nr.Data) == 0 {
+				continue
+			}
 			//var bb io.Reader = bytes.NewReader(nr.Data)
 
 			switch nr.RecType {

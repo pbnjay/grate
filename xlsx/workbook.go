@@ -134,7 +134,10 @@ func (d *Document) parseStyles(dec *xml.Decoder) error {
 					// actual referencable cell styles
 					// 1) get base style so we can inherit format properly
 					baseID, _ := strconv.ParseInt(ax[2], 10, 64)
-					numFmtID := baseNumFormats[baseID]
+					numFmtID := "0"
+					if len(baseNumFormats) > int(baseID) {
+						numFmtID = baseNumFormats[baseID]
+					}
 
 					// 2) check if this XF overrides the base format
 					if ax[1] == "1" {
