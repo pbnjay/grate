@@ -241,7 +241,10 @@ func (s *WorkSheet) parse() error {
 			xnum := binary.LittleEndian.Uint64(r.Data[6:])
 
 			value := math.Float64frombits(xnum)
-			fno := s.b.xfs[ixfe]
+			var fno uint16
+			if ixfe < len(s.b.xfs) {
+				fno = s.b.xfs[ixfe]
+			}
 			rval, _ := s.b.nfmt.Apply(fno, value)
 
 			s.placeValue(rowIndex, colIndex, rval)
@@ -354,7 +357,9 @@ func (s *WorkSheet) parse() error {
 			if sstIndex > len(s.b.strings) {
 				return errors.New("xls: invalid sst index")
 			}
-			s.placeValue(rowIndex, colIndex, s.b.strings[sstIndex])
+			if s.b.strings[sstIndex] != "" {
+				s.placeValue(rowIndex, colIndex, s.b.strings[sstIndex])
+			}
 			//log.Printf("SST spec: %d %d = [%d] %s", rowIndex, colIndex, sstIndex, s.b.strings[sstIndex])
 
 		case RecTypeHLink:
