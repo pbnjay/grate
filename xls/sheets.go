@@ -94,13 +94,11 @@ func (s *WorkSheet) placeValue(rowIndex, colIndex int, val interface{}) {
 		// invalid
 		return
 	}
-	/*
-		// ensure we always have a complete matrix
-		for len(s.rows) <= rowIndex {
-			emptyRow := make([]interface{}, s.maxCol+1)
-			s.rows = append(s.rows, &row{emptyRow})
-		}
-	*/
+	// ensure we always have a complete matrix
+	for len(s.rows) <= rowIndex {
+		emptyRow := make([]interface{}, s.maxCol+1)
+		s.rows = append(s.rows, &row{emptyRow})
+	}
 
 	s.rows[rowIndex].cols[colIndex] = val
 }
