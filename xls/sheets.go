@@ -155,11 +155,9 @@ func (s *WorkSheet) parse() error {
 			s.maxCol = int(uint64(maxCol)&0x001FF) - 1 // translate to last valid index
 			if (maxRow-minRow) == 0 || (maxCol-minCol) == 0 {
 				s.empty = true
-			} else {
-				// pre-allocate cells
-				s.makeCells()
-				//s.placeValue(s.maxRow, s.maxCol, nil)
 			}
+			// pre-allocate cells
+			s.makeCells()
 		}
 	}
 	inSubstream = 0
