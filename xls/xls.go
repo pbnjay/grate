@@ -11,6 +11,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"io/ioutil"
 	"log"
 	"sync"
 
@@ -66,7 +67,7 @@ func Open(filename string) (grate.Source, error) {
 	if err != nil {
 		return nil, grate.WrapErr(err, grate.ErrNotInFormat)
 	}
-	raw, err := io.ReadAll(rdr)
+	raw, err := ioutil.ReadAll(rdr)
 	if err != nil {
 		return nil, err
 	}
