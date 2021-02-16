@@ -1,3 +1,11 @@
+// Command grate2tsv is a highly parallel tabular data extraction tool. It's
+// probably not necessary in your situation, but is included here since it
+// is a good stress test of the codebase.
+//
+// Files on the command line will be parsed and extracted to the "results"
+// subdirectory under a heirarchical arrangement (to make our filesystems
+// more responsive), and a "results.txt" file will be created logging basic
+// information and errors for each file.
 package main
 
 import (
@@ -246,7 +254,6 @@ func processFile(fn string) ([]stats, error) {
 					w.Write([]byte(v))
 				}
 				w.Write([]byte{'\n'})
-				//fmt.Fprintln(w, strings.Join(row, "\t"))
 				ps.NumRows++
 			}
 		}
