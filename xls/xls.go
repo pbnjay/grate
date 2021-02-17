@@ -22,6 +22,7 @@ import (
 
 var _ = grate.Register("xls", 1, Open)
 
+// WorkBook represents an Excel workbook containing 1 or more sheets.
 type WorkBook struct {
 	filename string
 	ctx      context.Context
@@ -80,6 +81,16 @@ func (b *WorkBook) loadFromStream(raw []byte) error {
 }
 
 func (b *WorkBook) loadFromStreamWithDecryptor(raw []byte, dec crypto.Decryptor) error {
+	// interestingly (insecurely) BIFF8 keeps Record Types and sizes in the clear,
+	// has a few records that are not encrypted, and has 1 record type that does
+	// not encrypt the 32bit integer position at the beginning (while encrypting
+	// the rest). It also resets the encryption block counter every 1024 bytes
+	// (counting all the "skipped" bytes described above).
+	//
+	// So this code streams the records through the decryption, but also records
+	// a set of overlays applied to the final result which restore the
+	// "cleartext" contents in line with the decrypted content.
+
 	if grate.Debug {
 		log.Println("  Decrypting xls stream with standard RC4")
 	}
@@ -144,6 +155,7 @@ func (b *WorkBook) loadFromStreamWithDecryptor(raw []byte, dec crypto.Decryptor)
 		}
 	}
 
+	// recurse into the stream parser now that things are decrypted
 	return b.loadFromStream2(alldata, true)
 }
 
@@ -167,7 +179,7 @@ func (b *WorkBook) loadFromStream2(raw []byte, isDecrypted bool) error {
 	b.pos2substream = make(map[int64]int, 10)
 	b.fpos = 0
 
-	// IMPORTANT: if there are any existing record, we need to return them to the pool
+	// IMPORTANT: if there are any existing records, we need to return them to the pool
 	for i, sub := range b.substreams {
 		for _, r := range sub {
 			recPool.Put(r)
@@ -194,6 +206,7 @@ func (b *WorkBook) loadFromStream2(raw []byte, isDecrypted bool) error {
 		}
 		b.fpos += int64(4 + len(nr.Data))
 
+		// if there's a FilePass record, the data is encrypted
 		if nr.RecType == RecTypeFilePass && !isDecrypted {
 			etype := binary.LittleEndian.Uint16(nr.Data)
 			switch etype {
@@ -230,10 +243,12 @@ func (b *WorkBook) loadFromStream2(raw []byte, isDecrypted bool) error {
 			if len(nr.Data) == 0 {
 				continue
 			}
-			//var bb io.Reader = bytes.NewReader(nr.Data)
 
 			switch nr.RecType {
 			case RecTypeSST:
+				// Shared String Table is often continued across multiple records,
+				// so we want to gather them all before starting to parse (some
+				// strings may span the gap between records)
 				recSet := []*rec{nr}
 
 				lastIndex := i
@@ -274,12 +289,14 @@ func (b *WorkBook) loadFromStream2(raw []byte, isDecrypted bool) error {
 				}
 
 			case RecTypeCodePage:
+				// BIFF8 is entirely UTF-16LE so this is actually ignored
 				b.codepage = binary.LittleEndian.Uint16(nr.Data)
 
 			case RecTypeDate1904:
 				b.dateMode = binary.LittleEndian.Uint16(nr.Data)
 
 			case RecTypeFormat:
+				// Format maps a format ID to a code string
 				fmtNo := binary.LittleEndian.Uint16(nr.Data)
 				formatStr, _, err := decodeXLUnicodeString(nr.Data[2:])
 				if err != nil {
@@ -289,11 +306,14 @@ func (b *WorkBook) loadFromStream2(raw []byte, isDecrypted bool) error {
 				b.nfmt.Add(fmtNo, formatStr)
 
 			case RecTypeXF:
+				// XF records merge multiple style and format directives to one ID
 				// ignore font id at nr.Data[0:2]
 				fmtNo := binary.LittleEndian.Uint16(nr.Data[2:])
 				b.xfs = append(b.xfs, fmtNo)
 
 			case RecTypeBoundSheet8:
+				// Identifies the postition within the stream, visibility state,
+				// and name of a worksheet
 				bs := &boundSheet{}
 				bs.Position = binary.LittleEndian.Uint32(nr.Data[:4])
 				bs.HiddenState = nr.Data[4]

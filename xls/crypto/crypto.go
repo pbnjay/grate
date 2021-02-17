@@ -1,3 +1,6 @@
+// Package crypto implements excel encryption algorithms from the
+// MS-OFFCRYPTO design specs. Currently only standard/basic RC4
+// "obfuscation" is supported.
 package crypto
 
 import (
@@ -59,6 +62,8 @@ type Decryptor interface {
 // 2003, Office Excel 2007, and Excel 2010 encrypt the document as specified in [MS-OFFCRYPTO],
 // section 2.3. If an encryption password is not specified or the workbook or sheet is only
 // protected, the document is encrypted with the default password of:
+
+// DefaultXLSPassword is the default Excel encryption password.
 var DefaultXLSPassword = "VelvetSweatshop"
 
 /////////////

@@ -135,6 +135,10 @@ func decodeXLUnicodeRichExtendedString(r io.Reader) (string, error) {
 
 // read in an array of XLUnicodeRichExtendedString s
 func parseSST(recs []*rec) ([]string, error) {
+	// The quirky thing about this code is that when strings cross a record
+	// boundary, there's an intervening flags byte that MAY change the string
+	// from an 8-bit encoding to 16-bit or vice versa.
+
 	//totalRefs := binary.LittleEndian.Uint32(recs[0].Data[0:4])
 	numStrings := binary.LittleEndian.Uint32(recs[0].Data[4:8])
 

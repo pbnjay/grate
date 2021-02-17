@@ -12,6 +12,7 @@ import (
 	"github.com/pbnjay/grate"
 )
 
+// List (visible) sheet names from the workbook.
 func (b *WorkBook) List() ([]string, error) {
 	res := make([]string, 0, len(b.sheets))
 	for _, s := range b.sheets {
@@ -22,6 +23,18 @@ func (b *WorkBook) List() ([]string, error) {
 	return res, nil
 }
 
+// ListHidden sheet names in the workbook.
+func (b *WorkBook) ListHidden() ([]string, error) {
+	res := make([]string, 0, len(b.sheets))
+	for _, s := range b.sheets {
+		if (s.HiddenState & 0x03) != 0 {
+			res = append(res, s.Name)
+		}
+	}
+	return res, nil
+}
+
+// Get opens the named worksheet and return an iterator for its contents.
 func (b *WorkBook) Get(sheetName string) (grate.Collection, error) {
 	for _, s := range b.sheets {
 		if s.Name == sheetName {
@@ -36,6 +49,7 @@ func (b *WorkBook) Get(sheetName string) (grate.Collection, error) {
 	return nil, errors.New("xls: sheet not found")
 }
 
+// WorkSheet holds various metadata about a sheet in a Workbook.
 type WorkSheet struct {
 	b   *WorkBook
 	s   *boundSheet
@@ -121,6 +135,9 @@ func (s *WorkSheet) parse() error {
 		}
 		switch r.RecType {
 		case RecTypeBOF:
+			// a BOF inside a sheet usually means embedded content like a chart
+			// (which we aren't interested in). So we we set a flag and wait
+			// for the EOF for that content block.
 			if idx > 0 {
 				inSubstream++
 				continue
@@ -194,13 +211,16 @@ func (s *WorkSheet) parse() error {
 			colIndex := int(binary.LittleEndian.Uint16(r.Data[2:4]))
 			//ixfe := binary.LittleEndian.Uint16(r.Data[4:6])
 			if r.Data[7] == 0 {
+				// Boolean value
 				bv := false
 				if r.Data[6] == 1 {
 					bv = true
 				}
+				// FIXME: load ixfe to support "yes"/"no" custom formats
 				s.placeValue(rowIndex, colIndex, bv)
 				//log.Printf("bool/error spec: %d %d %+v", rowIndex, colIndex, bv)
 			} else {
+				// it's an error, load the label
 				be, ok := berrLookup[r.Data[6]]
 				if !ok {
 					be = "<unknown error>"
@@ -210,12 +230,13 @@ func (s *WorkSheet) parse() error {
 			}
 
 		case RecTypeMulRk:
+			// MulRk encodes multiple RK values in a row
 			nrk := int((r.RecSize - 6) / 6)
 			rowIndex := int(binary.LittleEndian.Uint16(r.Data[:2]))
 			colIndex := int(binary.LittleEndian.Uint16(r.Data[2:4]))
 			for i := 0; i < nrk; i++ {
 				off := 4 + i*6
-				ixfe := binary.LittleEndian.Uint16(r.Data[off:])
+				ixfe := int(binary.LittleEndian.Uint16(r.Data[off:]))
 				value := RKNumber(binary.LittleEndian.Uint32(r.Data[off:]))
 
 				var rval interface{}
@@ -223,9 +244,12 @@ func (s *WorkSheet) parse() error {
 					rval = value.Int()
 				} else {
 					rval = value.Float64()
-					fno := s.b.xfs[ixfe]
-					rval, _ = s.b.nfmt.Apply(fno, rval)
 				}
+				var fno uint16
+				if ixfe < len(s.b.xfs) {
+					fno = s.b.xfs[ixfe]
+				}
+				rval, _ = s.b.nfmt.Apply(fno, rval)
 				s.placeValue(rowIndex, colIndex+i, rval)
 			}
 			//log.Printf("mulrow spec: %+v", *mr)
@@ -257,16 +281,19 @@ func (s *WorkSheet) parse() error {
 				rval = value.Int()
 			} else {
 				rval = value.Float64()
-				fno := s.b.xfs[ixfe]
-				rval, _ = s.b.nfmt.Apply(fno, rval)
 			}
+			var fno uint16
+			if ixfe < len(s.b.xfs) {
+				fno = s.b.xfs[ixfe]
+			}
+			rval, _ = s.b.nfmt.Apply(fno, rval)
 			s.placeValue(rowIndex, colIndex, rval)
 			//log.Printf("RK spec: %d %d = %s", rowIndex, colIndex, rr.Value.String())
 
 		case RecTypeFormula:
 			formulaRow = binary.LittleEndian.Uint16(r.Data[:2])
 			formulaCol = binary.LittleEndian.Uint16(r.Data[2:4])
-			ixfe := binary.LittleEndian.Uint16(r.Data[4:6])
+			ixfe := int(binary.LittleEndian.Uint16(r.Data[4:6]))
 			fdata := r.Data[6:]
 			if fdata[6] == 0xFF && r.Data[7] == 0xFF {
 				switch fdata[0] {
@@ -278,6 +305,7 @@ func (s *WorkSheet) parse() error {
 					if fdata[2] != 0 {
 						bv = true
 					}
+					// FIXME: apply the ixfe format
 					s.placeValue(int(formulaRow), int(formulaCol), bv)
 				case 2:
 					// error value
@@ -294,13 +322,22 @@ func (s *WorkSheet) parse() error {
 			} else {
 				xnum := binary.LittleEndian.Uint64(r.Data[6:])
 				value := math.Float64frombits(xnum)
-				fno := s.b.xfs[ixfe]
+				var fno uint16
+				if ixfe < len(s.b.xfs) {
+					fno = s.b.xfs[ixfe]
+				}
 				rval, _ := s.b.nfmt.Apply(fno, value)
 				s.placeValue(int(formulaRow), int(formulaCol), rval)
 			}
 			//log.Printf("formula spec: %d %d ~~ %+v", formulaRow, formulaCol, r.Data)
 
 		case RecTypeString:
+			// String is the previously rendered value of a formula
+			// NB similar to the workbook SST, this can continue over
+			// addition records up to 32k characters. A 1-byte flag
+			// at each gap indicates if the encoding switches
+			// to/from 8/16-bit characters.
+
 			charCount := binary.LittleEndian.Uint16(r.Data[:2])
 			flags := r.Data[2]
 			fstr := ""
@@ -353,6 +390,7 @@ func (s *WorkSheet) parse() error {
 			if sstIndex > len(s.b.strings) {
 				return errors.New("xls: invalid sst index")
 			}
+			// FIXME: double check that ixfe doesn't modify output
 			if s.b.strings[sstIndex] != "" {
 				s.placeValue(rowIndex, colIndex, s.b.strings[sstIndex])
 			}
@@ -371,23 +409,26 @@ func (s *WorkSheet) parse() error {
 				//log.Println("invalid hyperlink row")
 				continue
 			}
-			if lastRow == 0xFFFF {
+			if lastRow == 0xFFFF { // placeholder value indicate "last"
 				lastRow = uint16(s.maxRow)
 			}
-			if lastCol == 0xFF {
+			if lastCol == 0xFF { // placeholder value indicate "last"
 				lastCol = uint16(s.maxCol)
 			}
 
+			// decode the hyperlink datastructure and try to find the
+			// display text and separate the URL itself.
 			displayText, linkText, err := decodeHyperlinks(r.Data[8:])
 			if err != nil {
 				log.Println(err)
 				continue
 			}
 
-			// apply merge cell rules
+			// apply merge cell rules (see RecTypeMergeCells below)
 			for rn := int(firstRow); rn <= int(lastRow); rn++ {
 				for cn := int(firstCol); cn <= int(lastCol); cn++ {
 					if rn == int(firstRow) && cn == int(firstCol) {
+						// TODO: provide custom hooks for how to handle links in output
 						s.placeValue(rn, cn, displayText+" <"+linkText+">")
 					} else if cn == int(firstCol) {
 						// first and last column MAY be the same
@@ -406,6 +447,17 @@ func (s *WorkSheet) parse() error {
 			}
 
 		case RecTypeMergeCells:
+			// To keep cells aligned, Merged cells are handled by placing
+			// special characters in each cell covered by the merge block.
+			//
+			// The contents of the cell are always in the top left position.
+			// A "down arrow" (↓) indicates the left side of the merge block, and a
+			// "down arrow with stop line" (⤓) indicates the last row of the merge.
+			// A "right arrow" (→) indicates that the columns span horizontally,
+			// and a "right arrow with stop line" (⇥) indicates the rightmost
+			// column of the merge.
+			//
+
 			cmcs := binary.LittleEndian.Uint16(r.Data[:2])
 			raw := r.Data[2:]
 			for i := 0; i < int(cmcs); i++ {
@@ -415,10 +467,10 @@ func (s *WorkSheet) parse() error {
 				lastCol := binary.LittleEndian.Uint16(r.Data[6:])
 				raw = raw[8:]
 
-				if lastRow == 0xFFFF {
+				if lastRow == 0xFFFF { // placeholder value indicate "last"
 					lastRow = uint16(s.maxRow)
 				}
-				if lastCol == 0xFF {
+				if lastCol == 0xFF { // placeholder value indicate "last"
 					lastCol = uint16(s.maxCol)
 				}
 				for rn := int(firstRow); rn <= int(lastRow); rn++ {
@@ -473,6 +525,7 @@ func (s *WorkSheet) Next() bool {
 	return s.iterRow < len(s.rows)
 }
 
+// Strings returns the contents of the row as string types.
 func (s *WorkSheet) Strings() []string {
 	currow := s.rows[s.iterRow]
 	res := make([]string, len(currow.cols))
@@ -480,7 +533,14 @@ func (s *WorkSheet) Strings() []string {
 		if col == nil || col == "" {
 			continue
 		}
-		res[i] = fmt.Sprint(col)
+		switch v := col.(type) {
+		case string:
+			res[i] = v
+		case fmt.Stringer:
+			res[i] = v.String()
+		default:
+			res[i] = fmt.Sprint(col)
+		}
 	}
 	return res
 }
