@@ -8,8 +8,15 @@ import (
 // number and fraction approximation with at most nn digits in the numerator
 // and nd digits in the denominator.
 func DecimalToWholeFraction(val float64, nn, nd int) (whole, num, den int) {
-	num, den = DecimalToFraction(val, nn, nd)
-	whole, num = num/den, num%den
+	wholeF, part := math.Modf(val)
+	if part == 0.0 {
+		return int(wholeF), 0, 1
+	}
+	if part < 0.0 {
+		part = -part
+	}
+	whole = int(wholeF)
+	num, den = DecimalToFraction(part, nn, nd)
 	return
 }
 

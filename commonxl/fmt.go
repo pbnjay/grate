@@ -145,6 +145,9 @@ func fracFmtFunc(n int) FmtFunc {
 			return "MUST BE numeric TO FORMAT CORRECTLY"
 		}
 		w, n, d := DecimalToWholeFraction(f, n, n)
+		if n == 0 {
+			return fmt.Sprintf("%d", w)
+		}
 		return fmt.Sprintf("%d %d/%d", w, n, d)
 	}
 }

@@ -6,12 +6,12 @@ import (
 	"time"
 )
 
-type testcase struct {
+type testcaseNums struct {
 	v interface{}
 	s string
 }
 
-var commas = []testcase{
+var commas = []testcaseNums{
 	{10, "10"},
 	{float64(10), "10"},
 	{float64(10) + 0.12345, "10.12345"},
@@ -72,10 +72,11 @@ var commas = []testcase{
 
 func TestCommas(t *testing.T) {
 	cf := addCommas(identFunc)
-
 	for _, c := range commas {
-		if c.s != cf(nil, c.v) {
-			t.Fatalf("commas failed: did not get '%s' for %T(%v)", c.s, c.v, c.v)
+		fs := cf(nil, c.v)
+		if c.s != fs {
+			t.Fatalf("commas failed: get '%s' but expected '%s' for %T(%v)",
+				fs, c.s, c.v, c.v)
 		}
 	}
 }
@@ -101,5 +102,37 @@ func TestDateFormats(t *testing.T) {
 			// mainly testing these don't crash...
 			log.Println(ff(fx, t))
 		}
+	}
+}
+func TestBoolFormats(t *testing.T) {
+	ff := makeFormatter(`"yes";"yes";"no"`)
+
+	if "no" != ff(nil, false) {
+		t.Fatal(`false should be "no"`)
+	}
+	if "no" != ff(nil, 0) {
+		t.Fatal(`0 should be "no"`)
+	}
+	if "no" != ff(nil, 0.0) {
+		t.Fatal(`0.0 should be "no"`)
+	}
+
+	/////
+
+	if "yes" != ff(nil, true) {
+		t.Fatal(`true should be "yes"`)
+	}
+	if "yes" != ff(nil, 99) {
+		t.Fatal(`99 should be "yes"`)
+	}
+	if "yes" != ff(nil, -4) {
+		t.Fatal(`-4 should be "yes"`)
+	}
+
+	if "yes" != ff(nil, 4.0) {
+		t.Fatal(`4.0 should be "yes"`)
+	}
+	if "yes" != ff(nil, -99.0) {
+		t.Fatal(`-99.0 should be "yes"`)
 	}
 }
