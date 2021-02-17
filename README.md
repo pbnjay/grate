@@ -42,4 +42,4 @@ func main() {
 
 # License
 
-All source code is licensed under the [GNU GPLv3](https://raw.github.com/pbnjay/grate/master/LICENSE).
+All source code is licensed under the [MIT License](https://raw.github.com/pbnjay/grate/master/LICENSE).
