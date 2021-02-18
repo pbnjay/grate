@@ -93,6 +93,7 @@ func (s *Sheet) parseSheet() error {
 					if err == nil {
 						val = fval
 					}
+					val = numFormat(&s.d.fmt, fval)
 					//log.Println("CELL NUMBER", val, numFormat)
 				case SharedStringCellType:
 					//log.Println("CELL SHSTR", val, currentCellType, numFormat)

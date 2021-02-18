@@ -125,10 +125,10 @@ func (d *Document) parseStyles(dec *xml.Decoder) error {
 				ax := getAttrs(v.Attr, "numFmtId", "applyNumberFormat", "xfId")
 				if section == 1 {
 					// load base styles, but only save number format
-					if ax[1] != "1" {
-						baseNumFormats = append(baseNumFormats, ax[0])
-					} else {
+					if ax[1] == "0" {
 						baseNumFormats = append(baseNumFormats, "0")
+					} else {
+						baseNumFormats = append(baseNumFormats, ax[0])
 					}
 				} else if section == 2 {
 					// actual referencable cell styles
@@ -140,11 +140,11 @@ func (d *Document) parseStyles(dec *xml.Decoder) error {
 					}
 
 					// 2) check if this XF overrides the base format
-					if ax[1] == "1" {
-						numFmtID = ax[0]
-					} else {
+					if ax[1] == "0" {
 						// remove the format (if it was inherited)
 						numFmtID = "0"
+					} else {
+						numFmtID = ax[0]
 					}
 
 					nfid, _ := strconv.ParseInt(numFmtID, 10, 16)

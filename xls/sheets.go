@@ -209,15 +209,22 @@ func (s *WorkSheet) parse() error {
 		case RecTypeBoolErr:
 			rowIndex := int(binary.LittleEndian.Uint16(r.Data[:2]))
 			colIndex := int(binary.LittleEndian.Uint16(r.Data[2:4]))
-			//ixfe := binary.LittleEndian.Uint16(r.Data[4:6])
+			ixfe := int(binary.LittleEndian.Uint16(r.Data[4:6]))
 			if r.Data[7] == 0 {
 				// Boolean value
 				bv := false
 				if r.Data[6] == 1 {
 					bv = true
 				}
-				// FIXME: load ixfe to support "yes"/"no" custom formats
-				s.placeValue(rowIndex, colIndex, bv)
+				var rval interface{} = bv
+				var fno uint16
+				if ixfe < len(s.b.xfs) {
+					fno = s.b.xfs[ixfe]
+				}
+				if fval, ok := s.b.nfmt.Apply(fno, bv); ok {
+					rval = fval
+				}
+				s.placeValue(rowIndex, colIndex, rval)
 				//log.Printf("bool/error spec: %d %d %+v", rowIndex, colIndex, bv)
 			} else {
 				// it's an error, load the label
@@ -305,8 +312,15 @@ func (s *WorkSheet) parse() error {
 					if fdata[2] != 0 {
 						bv = true
 					}
-					// FIXME: apply the ixfe format
-					s.placeValue(int(formulaRow), int(formulaCol), bv)
+					var rval interface{} = bv
+					var fno uint16
+					if ixfe < len(s.b.xfs) {
+						fno = s.b.xfs[ixfe]
+					}
+					if fval, ok := s.b.nfmt.Apply(fno, bv); ok {
+						rval = fval
+					}
+					s.placeValue(int(formulaRow), int(formulaCol), rval)
 				case 2:
 					// error value
 					be, ok := berrLookup[fdata[2]]

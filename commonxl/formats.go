@@ -29,12 +29,16 @@ func (x *Formatter) Mode1904(enabled bool) {
 
 // Add a custom number format to the formatter.
 func (x *Formatter) Add(fmtID uint16, formatCode string) error {
+	if x.customCodes == nil {
+		x.customCodes = make(map[uint16]FmtFunc)
+	}
+	if strings.ToLower(formatCode) == "general" {
+		x.customCodes[fmtID] = goFormatters[0]
+		return nil
+	}
 	_, ok := goFormatters[fmtID]
 	if ok {
 		return errors.New("grate/commonxl: cannot replace default number formats")
-	}
-	if x.customCodes == nil {
-		x.customCodes = make(map[uint16]FmtFunc)
 	}
 
 	_, ok2 := x.customCodes[fmtID]
