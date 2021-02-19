@@ -73,7 +73,7 @@ var commas = []testcaseNums{
 func TestCommas(t *testing.T) {
 	cf := addCommas(identFunc)
 	for _, c := range commas {
-		fs := cf(nil, c.v)
+		fs, _ := cf(nil, c.v)
 		if c.s != fs {
 			t.Fatalf("commas failed: get '%s' but expected '%s' for %T(%v)",
 				fs, c.s, c.v, c.v)
@@ -105,7 +105,7 @@ func TestDateFormats(t *testing.T) {
 	}
 }
 func TestBoolFormats(t *testing.T) {
-	ff := makeFormatter(`"yes";"yes";"no"`)
+	ff := func(f *Formatter, v interface{}) string { s, _ := makeFormatter(`"yes";"yes";"no"`)(f, v); return s }
 
 	if "no" != ff(nil, false) {
 		t.Fatal(`false should be "no"`)

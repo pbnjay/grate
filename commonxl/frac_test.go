@@ -54,7 +54,7 @@ var fracs = []testcaseFrac{
 func TestFractions(t *testing.T) {
 	for _, c := range fracs {
 		ff := fracFmtFunc(c.n)
-		fs := ff(nil, c.v)
+		fs, _ := ff(nil, c.v)
 		if c.s != fs {
 			t.Fatalf("fractions failed: got: '%s' expected: '%s' for %T(%v)",
 				fs, c.s, c.v, c.v)
