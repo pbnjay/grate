@@ -45,33 +45,34 @@ func (x *Formatter) ConvertToDate(val float64) time.Time {
 }
 
 func timeFmtFunc(f string) FmtFunc {
-	return func(x *Formatter, v interface{}) string {
+	return func(x *Formatter, v interface{}) (string, interface{}) {
 		t, ok := v.(time.Time)
 		if !ok {
 			fval, ok := convertToFloat64(v)
 			if !ok {
-				return "MUST BE time.Time OR numeric TO FORMAT CORRECTLY"
+				return "MUST BE time.Time OR numeric TO FORMAT CORRECTLY", v
 			}
 			t = x.ConvertToDate(fval)
 		}
 		//log.Println("formatting date", t, "with", f, "=", t.Format(f))
-		return t.Format(f)
+		return t.Format(f), t
 	}
 }
 
+var cnTimeRepl = strings.NewReplacer(`AM`, `上午`, `PM`, `下午`)
+
 func cnTimeFmtFunc(f string) FmtFunc {
-	return func(x *Formatter, v interface{}) string {
+	return func(x *Formatter, v interface{}) (string, interface{}) {
 		t, ok := v.(time.Time)
 		if !ok {
 			fval, ok := convertToFloat64(v)
 			if !ok {
-				return "MUST BE time.Time OR numeric TO FORMAT CORRECTLY"
+				return "MUST BE time.Time OR numeric TO FORMAT CORRECTLY", v
 			}
 			t = x.ConvertToDate(fval)
 		}
 		s := t.Format(f)
-		s = strings.Replace(s, `AM`, `上午`, 1)
-		return strings.Replace(s, `PM`, `下午`, 1)
+		return cnTimeRepl.Replace(s), t
 	}
 }
 

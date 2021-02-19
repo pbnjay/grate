@@ -10,6 +10,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/pbnjay/grate"
+	"github.com/pbnjay/grate/commonxl"
 )
 
 // List (visible) sheet names from the workbook.
@@ -92,29 +93,29 @@ func (s staticCellType) String() string {
 
 type row struct {
 	// each value must be one of: int, float64, string, or time.Time
-	cols []interface{}
+	cols []commonxl.Value
 }
 
 func (s *WorkSheet) makeCells() {
 	// ensure we always have a complete matrix
 	for len(s.rows) <= s.maxRow {
-		emptyRow := make([]interface{}, s.maxCol+1)
-		s.rows = append(s.rows, &row{emptyRow})
+		emptyRow := make([]commonxl.Value, s.maxCol+1)
+		s.rows = append(s.rows, &row{cols: emptyRow})
 	}
 }
 
-func (s *WorkSheet) placeValue(rowIndex, colIndex int, val interface{}) {
+func (s *WorkSheet) placeValue(rowIndex, colIndex int, val interface{}, str string) {
 	if colIndex > s.maxCol || rowIndex > s.maxRow {
 		// invalid
 		return
 	}
 	// ensure we always have a complete matrix
 	for len(s.rows) <= rowIndex {
-		emptyRow := make([]interface{}, s.maxCol+1)
-		s.rows = append(s.rows, &row{emptyRow})
+		emptyRow := make([]commonxl.Value, s.maxCol+1)
+		s.rows = append(s.rows, &row{cols: emptyRow})
 	}
 
-	s.rows[rowIndex].cols[colIndex] = val
+	s.rows[rowIndex].cols[colIndex] = commonxl.NewValue(val, str)
 }
 
 func (s *WorkSheet) IsEmpty() bool {
@@ -212,19 +213,19 @@ func (s *WorkSheet) parse() error {
 			ixfe := int(binary.LittleEndian.Uint16(r.Data[4:6]))
 			if r.Data[7] == 0 {
 				// Boolean value
-				bv := false
+				bv, str := false, "false"
 				if r.Data[6] == 1 {
-					bv = true
+					bv, str = true, "true"
 				}
 				var rval interface{} = bv
 				var fno uint16
 				if ixfe < len(s.b.xfs) {
 					fno = s.b.xfs[ixfe]
 				}
-				if fval, ok := s.b.nfmt.Apply(fno, bv); ok {
-					rval = fval
+				if fval, v, ok := s.b.nfmt.Apply(fno, bv); ok {
+					rval, str = v, fval
 				}
-				s.placeValue(rowIndex, colIndex, rval)
+				s.placeValue(rowIndex, colIndex, rval, str)
 				//log.Printf("bool/error spec: %d %d %+v", rowIndex, colIndex, bv)
 			} else {
 				// it's an error, load the label
@@ -232,7 +233,7 @@ func (s *WorkSheet) parse() error {
 				if !ok {
 					be = "<unknown error>"
 				}
-				s.placeValue(rowIndex, colIndex, be)
+				s.placeValue(rowIndex, colIndex, be, be)
 				//log.Printf("bool/error spec: %d %d %s", rowIndex, colIndex, be)
 			}
 
@@ -256,8 +257,8 @@ func (s *WorkSheet) parse() error {
 				if ixfe < len(s.b.xfs) {
 					fno = s.b.xfs[ixfe]
 				}
-				rval, _ = s.b.nfmt.Apply(fno, rval)
-				s.placeValue(rowIndex, colIndex+i, rval)
+				fval, rval, _ := s.b.nfmt.Apply(fno, rval)
+				s.placeValue(rowIndex, colIndex+i, rval, fval)
 			}
 			//log.Printf("mulrow spec: %+v", *mr)
 
@@ -272,9 +273,9 @@ func (s *WorkSheet) parse() error {
 			if ixfe < len(s.b.xfs) {
 				fno = s.b.xfs[ixfe]
 			}
-			rval, _ := s.b.nfmt.Apply(fno, value)
+			fval, rval, _ := s.b.nfmt.Apply(fno, value)
 
-			s.placeValue(rowIndex, colIndex, rval)
+			s.placeValue(rowIndex, colIndex, rval, fval)
 			//log.Printf("Number spec: %d %d = %f", rowIndex, colIndex, value)
 
 		case RecTypeRK:
@@ -293,9 +294,14 @@ func (s *WorkSheet) parse() error {
 			if ixfe < len(s.b.xfs) {
 				fno = s.b.xfs[ixfe]
 			}
-			rval, _ = s.b.nfmt.Apply(fno, rval)
-			s.placeValue(rowIndex, colIndex, rval)
-			//log.Printf("RK spec: %d %d = %s", rowIndex, colIndex, rr.Value.String())
+			var str string
+			if fval, v, ok := s.b.nfmt.Apply(fno, rval); ok {
+				str, rval = fval, v
+			} else {
+				str = fmt.Sprintf("%v", rval)
+			}
+			s.placeValue(rowIndex, colIndex, rval, str)
+			//log.Printf("RK spec: %d %d = %s", rowIndex, colIndex, rval, str)
 
 		case RecTypeFormula:
 			formulaRow = binary.LittleEndian.Uint16(r.Data[:2])
@@ -308,26 +314,26 @@ func (s *WorkSheet) parse() error {
 					// string in next record
 				case 1:
 					// boolean
-					bv := false
+					bv, str := false, "false"
 					if fdata[2] != 0 {
-						bv = true
+						bv, str = true, "true"
 					}
 					var rval interface{} = bv
 					var fno uint16
 					if ixfe < len(s.b.xfs) {
 						fno = s.b.xfs[ixfe]
 					}
-					if fval, ok := s.b.nfmt.Apply(fno, bv); ok {
-						rval = fval
+					if fval, v, ok := s.b.nfmt.Apply(fno, bv); ok {
+						rval, str = v, fval
 					}
-					s.placeValue(int(formulaRow), int(formulaCol), rval)
+					s.placeValue(int(formulaRow), int(formulaCol), rval, str)
 				case 2:
 					// error value
 					be, ok := berrLookup[fdata[2]]
 					if !ok {
 						be = "<unknown error>"
 					}
-					s.placeValue(int(formulaRow), int(formulaCol), be)
+					s.placeValue(int(formulaRow), int(formulaCol), be, be)
 				case 3:
 					// blank string
 				default:
@@ -340,8 +346,8 @@ func (s *WorkSheet) parse() error {
 				if ixfe < len(s.b.xfs) {
 					fno = s.b.xfs[ixfe]
 				}
-				rval, _ := s.b.nfmt.Apply(fno, value)
-				s.placeValue(int(formulaRow), int(formulaCol), rval)
+				fval, rval, _ := s.b.nfmt.Apply(fno, value)
+				s.placeValue(int(formulaRow), int(formulaCol), rval, fval)
 			}
 			//log.Printf("formula spec: %d %d ~~ %+v", formulaRow, formulaCol, r.Data)
 
@@ -394,7 +400,7 @@ func (s *WorkSheet) parse() error {
 				}
 			}
 			// TODO: does formula record formatted dates as pre-computed strings?
-			s.placeValue(int(formulaRow), int(formulaCol), fstr)
+			s.placeValue(int(formulaRow), int(formulaCol), fstr, fstr)
 
 		case RecTypeLabelSst:
 			rowIndex := int(binary.LittleEndian.Uint16(r.Data[:2]))
@@ -405,8 +411,8 @@ func (s *WorkSheet) parse() error {
 				return errors.New("xls: invalid sst index")
 			}
 			// FIXME: double check that ixfe doesn't modify output
-			if s.b.strings[sstIndex] != "" {
-				s.placeValue(rowIndex, colIndex, s.b.strings[sstIndex])
+			if str := s.b.strings[sstIndex]; str != "" {
+				s.placeValue(rowIndex, colIndex, str, str)
 			}
 			//log.Printf("SST spec: %d %d = [%d] %s", rowIndex, colIndex, sstIndex, s.b.strings[sstIndex])
 
@@ -443,19 +449,20 @@ func (s *WorkSheet) parse() error {
 				for cn := int(firstCol); cn <= int(lastCol); cn++ {
 					if rn == int(firstRow) && cn == int(firstCol) {
 						// TODO: provide custom hooks for how to handle links in output
-						s.placeValue(rn, cn, displayText+" <"+linkText+">")
+						str := displayText + " <" + linkText + ">"
+						s.placeValue(rn, cn, str, str)
 					} else if cn == int(firstCol) {
 						// first and last column MAY be the same
 						if rn == int(lastRow) {
-							s.placeValue(rn, cn, endRowMerged)
+							s.placeValue(rn, cn, endRowMerged, "")
 						} else {
-							s.placeValue(rn, cn, continueRowMerged)
+							s.placeValue(rn, cn, continueRowMerged, "")
 						}
 					} else if cn == int(lastCol) {
 						// first and last column are NOT the same
-						s.placeValue(rn, cn, endColumnMerged)
+						s.placeValue(rn, cn, endColumnMerged, "")
 					} else {
-						s.placeValue(rn, cn, continueColumnMerged)
+						s.placeValue(rn, cn, continueColumnMerged, "")
 					}
 				}
 			}
@@ -494,15 +501,15 @@ func (s *WorkSheet) parse() error {
 						} else if cn == int(firstCol) {
 							// first and last column MAY be the same
 							if rn == int(lastRow) {
-								s.placeValue(rn, cn, endRowMerged)
+								s.placeValue(rn, cn, endRowMerged, "")
 							} else {
-								s.placeValue(rn, cn, continueRowMerged)
+								s.placeValue(rn, cn, continueRowMerged, "")
 							}
 						} else if cn == int(lastCol) {
 							// first and last column are NOT the same
-							s.placeValue(rn, cn, endColumnMerged)
+							s.placeValue(rn, cn, endColumnMerged, "")
 						} else {
-							s.placeValue(rn, cn, continueColumnMerged)
+							s.placeValue(rn, cn, continueColumnMerged, "")
 						}
 					}
 				}
@@ -544,16 +551,18 @@ func (s *WorkSheet) Strings() []string {
 	currow := s.rows[s.iterRow]
 	res := make([]string, len(currow.cols))
 	for i, col := range currow.cols {
-		if col == nil || col == "" {
+		if col.IsEmpty() {
 			continue
 		}
-		switch v := col.(type) {
-		case string:
-			res[i] = v
-		case fmt.Stringer:
-			res[i] = v.String()
-		default:
-			res[i] = fmt.Sprint(col)
+		if res[i] = col.String(); res[i] == "" {
+			switch v := col.Raw().(type) {
+			case string:
+				res[i] = v
+			case fmt.Stringer:
+				res[i] = v.String()
+			default:
+				res[i] = fmt.Sprint(col)
+			}
 		}
 	}
 	return res
@@ -561,22 +570,25 @@ func (s *WorkSheet) Strings() []string {
 
 // Scan extracts values from the row into the provided arguments
 // Arguments must be pointers to one of 5 supported types:
-//     bool, int, float64, string, or time.Time
+//     bool, int, float64, string, time.Time or interface{}
 func (s *WorkSheet) Scan(args ...interface{}) error {
 	currow := s.rows[s.iterRow]
 
 	for i, a := range args {
+		raw := currow.cols[i].Raw()
 		switch v := a.(type) {
 		case *bool:
-			*v = currow.cols[i].(bool)
+			*v = raw.(bool)
 		case *int:
-			*v = currow.cols[i].(int)
+			*v = raw.(int)
 		case *float64:
-			*v = currow.cols[i].(float64)
+			*v = raw.(float64)
 		case *string:
-			*v = currow.cols[i].(string)
+			*v = raw.(string)
 		case *time.Time:
-			*v = currow.cols[i].(time.Time)
+			*v = raw.(time.Time)
+		case *interface{}:
+			*v = raw
 		default:
 			return grate.ErrInvalidScanType
 		}

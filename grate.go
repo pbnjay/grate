@@ -42,6 +42,12 @@ type Collection interface {
 	Err() error
 }
 
+type Value interface {
+	Raw() interface{}
+	String() string
+	IsEmpty() bool
+}
+
 // OpenFunc defines a Source's instantiation function.
 // It should return ErrNotInFormat immediately if filename is not of the correct file type.
 type OpenFunc func(filename string) (Source, error)

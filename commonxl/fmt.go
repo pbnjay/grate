@@ -7,33 +7,45 @@ import (
 )
 
 // FmtFunc will format a value according to the designated style.
-type FmtFunc func(*Formatter, interface{}) string
+// It also returns the parsed value.
+type FmtFunc func(*Formatter, interface{}) (string, interface{})
+
+type Value struct {
+	v interface{}
+	s string
+}
+
+func NewValue(v interface{}, s string) Value { return Value{v: v, s: s} }
+func (v Value) Raw() interface{}             { return v.v }
+func (v Value) String() string               { return v.s }
+func (v Value) IsEmpty() bool                { return v.v == nil && v.s == "" }
 
 func staticFmtFunc(s string) FmtFunc {
-	return func(x *Formatter, v interface{}) string {
-		return s
+	return func(x *Formatter, v interface{}) (string, interface{}) {
+		return s, s
 	}
 }
 
 func surround(pre string, ff FmtFunc, post string) FmtFunc {
-	return func(x *Formatter, v interface{}) string {
-		return pre + ff(x, v) + post
+	return func(x *Formatter, v interface{}) (string, interface{}) {
+		s, v := ff(x, v)
+		return pre + s + post, v
 	}
 }
 
 func addNegParens(ff FmtFunc) FmtFunc {
-	return func(x *Formatter, v interface{}) string {
-		s1 := ff(x, v)
+	return func(x *Formatter, v interface{}) (string, interface{}) {
+		s1, v1 := ff(x, v)
 		if s1[0] == '-' {
-			return "(" + s1[1:] + ")"
+			return "(" + s1[1:] + ")", v1
 		}
-		return s1
+		return s1, v1
 	}
 }
 
 func addCommas(ff FmtFunc) FmtFunc {
-	return func(x *Formatter, v interface{}) string {
-		s1 := ff(x, v)
+	return func(x *Formatter, v interface{}) (string, interface{}) {
+		s1, v1 := ff(x, v)
 		isNeg := false
 		if s1[0] == '-' {
 			isNeg = true
@@ -48,35 +60,35 @@ func addCommas(ff FmtFunc) FmtFunc {
 			s1 = s1[:endIndex] + "," + s1[endIndex:]
 		}
 		if isNeg {
-			return "-" + s1
+			return "-" + s1, v1
 		}
-		return s1
+		return s1, v1
 	}
 }
 
-func identFunc(x *Formatter, v interface{}) string {
+func identFunc(x *Formatter, v interface{}) (string, interface{}) {
 	if s, ok := v.(string); ok {
-		return s
+		return s, s
 	}
-	return fmt.Sprint(v)
+	return fmt.Sprint(v), v
 }
 
 func sprintfFunc(fs string, mul int) FmtFunc {
 	wantInt64 := strings.Contains(fs, "%d")
-	return func(x *Formatter, v interface{}) string {
+	return func(x *Formatter, v interface{}) (string, interface{}) {
 		switch val := v.(type) {
 		case int, uint, int64, uint64, int32, uint32, uint16, int16:
-			return fmt.Sprintf(fs, v)
+			return fmt.Sprintf(fs, v), v
 
 		case float64:
 			val *= float64(mul)
 			if wantInt64 {
 				v2 := int64(val)
-				return fmt.Sprintf(fs, v2)
+				return fmt.Sprintf(fs, v2), v2
 			}
-			return fmt.Sprintf(fs, val)
+			return fmt.Sprintf(fs, val), val
 		}
-		return fmt.Sprint(v)
+		return fmt.Sprint(v), v
 	}
 }
 
@@ -125,30 +137,30 @@ func convertToFloat64(v interface{}) (float64, bool) {
 }
 
 func zeroDashFunc(ff FmtFunc) FmtFunc {
-	return func(x *Formatter, v interface{}) string {
+	return func(x *Formatter, v interface{}) (string, interface{}) {
 		fval, ok := convertToFloat64(v)
 		if !ok {
 			// strings etc returned as-is
-			return fmt.Sprint(v)
+			return fmt.Sprint(v), v
 		}
 		if fval == 0.0 {
-			return "-"
+			return "-", fval
 		}
 		return ff(x, v)
 	}
 }
 
 func fracFmtFunc(n int) FmtFunc {
-	return func(x *Formatter, v interface{}) string {
+	return func(x *Formatter, v interface{}) (string, interface{}) {
 		f, ok := convertToFloat64(v)
 		if !ok {
-			return "MUST BE numeric TO FORMAT CORRECTLY"
+			return "MUST BE numeric TO FORMAT CORRECTLY", v
 		}
 		w, n, d := DecimalToWholeFraction(f, n, n)
 		if n == 0 {
-			return fmt.Sprintf("%d", w)
+			return fmt.Sprintf("%d", w), f
 		}
-		return fmt.Sprintf("%d %d/%d", w, n, d)
+		return fmt.Sprintf("%d %d/%d", w, n, d), f
 	}
 }
 
@@ -166,7 +178,7 @@ func switchFmtFunc(pos FmtFunc, others ...FmtFunc) FmtFunc {
 			}
 		}
 	}
-	return func(x *Formatter, v interface{}) string {
+	return func(x *Formatter, v interface{}) (string, interface{}) {
 		val, ok := convertToFloat64(v)
 		if !ok {
 			return stringFF(x, v)

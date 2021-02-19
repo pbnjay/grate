@@ -196,15 +196,17 @@ func (x *Formatter) Get(fmtID uint16) (FmtFunc, bool) {
 
 // Apply the specified number format to the value.
 // Returns false when fmtID is unknown.
-func (x *Formatter) Apply(fmtID uint16, val interface{}) (string, bool) {
+func (x *Formatter) Apply(fmtID uint16, val interface{}) (string, interface{}, bool) {
 	ff, ok := goFormatters[fmtID]
 	if !ok {
 		fs, ok2 := x.customCodes[fmtID]
 		if ok2 {
-			return fs(x, val), true
+			s, v := fs(x, val)
+			return s, v, true
 		}
 	}
-	return ff(x, val), ok
+	s, v := ff(x, val)
+	return s, v, ok
 }
 
 // builtInFormats are all the built-in number formats for XLS/XLSX.
