@@ -16,21 +16,18 @@ import (
 )
 
 type Sheet struct {
+	err     error
 	d       *Document
 	relID   string
 	name    string
 	docname string
-
-	err error
-
-	minRow int
-	maxRow int
-	minCol int
-	maxCol int
-	rows   []*row
-	empty  bool
-
+	rows    []*row
+	minRow  int
+	maxRow  int
+	minCol  int
+	maxCol  int
 	iterRow int
+	empty   bool
 }
 
 var errNotLoaded = errors.New("xlsx: sheet not loaded")

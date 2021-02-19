@@ -18,17 +18,16 @@ var _ = grate.Register("xlsx", 5, Open)
 
 // Document contains an Office Open XML document.
 type Document struct {
+	f    *os.File
+	r    *zip.Reader
+	rels map[ // type => id => filename
+	string]map[string]string
 	filename   string
-	f          *os.File
-	r          *zip.Reader
 	primaryDoc string
-
-	// type => id => filename
-	rels    map[string]map[string]string
-	sheets  []*Sheet
-	strings []string
-	xfs     []commonxl.FmtFunc
-	fmt     commonxl.Formatter
+	fmt        commonxl.Formatter
+	sheets     []*Sheet
+	strings    []string
+	xfs        []commonxl.FmtFunc
 }
 
 func (d *Document) Close() error {

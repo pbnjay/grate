@@ -15,16 +15,16 @@ type header struct {
 
 // 2.1.4
 type rec struct {
-	RecType recordType //
-	RecSize uint16     // must be between 0 and 8224
-	Data    []byte     // len(rec.data) = rec.recsize
+	Data    []byte
+	RecType recordType
+	RecSize uint16
 }
 
 type boundSheet struct {
-	Position    uint32 // A FilePointer as specified in [MS-OSHARED] section 2.2.1.5 that specifies the stream position of the start of the BOF record for the sheet.
-	HiddenState byte   // (2 bits) An unsigned integer that specifies the hidden state of the sheet. MUST be a value from the following table:
-	SheetType   byte   // An unsigned integer that specifies the sheet type. 00=worksheet
 	Name        string
+	Position    uint32
+	HiddenState byte
+	SheetType   byte
 }
 
 ///////
@@ -44,10 +44,10 @@ type shRef8 struct {
 	LastCol  uint16 // 0-based
 }
 type shMulRK struct {
-	RowIndex uint16 // 0-based
-	FirstCol uint16 // 0-based
 	Values   []RkRec
-	LastCol  uint16 // 0-based?
+	RowIndex uint16
+	FirstCol uint16
+	LastCol  uint16
 }
 type RkRec struct {
 	IXFCell uint16

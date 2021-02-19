@@ -9,8 +9,8 @@ import (
 
 // Formatter contains formatting methods common to Excel spreadsheets.
 type Formatter struct {
-	flags       uint64
 	customCodes map[uint16]FmtFunc
+	flags       uint64
 }
 
 const (

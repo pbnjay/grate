@@ -52,20 +52,18 @@ func (b *WorkBook) Get(sheetName string) (grate.Collection, error) {
 
 // WorkSheet holds various metadata about a sheet in a Workbook.
 type WorkSheet struct {
-	b   *WorkBook
-	s   *boundSheet
-	ss  int
-	err error
-
-	minRow int
-	maxRow int // maximum valid row index (0xFFFF)
-	minCol int
-	maxCol int // maximum valid column index (0xFF)
-	rows   []*row
-	empty  bool
-
+	err     error
+	b       *WorkBook
+	s       *boundSheet
+	rows    []*row
+	minRow  int
+	maxRow  int
+	minCol  int
+	maxCol  int
+	ss      int
 	iterRow int
 	iterMC  int
+	empty   bool
 }
 
 type staticCellType rune

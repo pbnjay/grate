@@ -6,8 +6,8 @@ import (
 )
 
 type testcaseFrac struct {
-	v float64
 	s string
+	v float64
 	n int
 }
 

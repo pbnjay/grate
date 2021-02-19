@@ -70,9 +70,9 @@ func Open(filename string) (Source, error) {
 }
 
 type srcOpenTab struct {
+	op   OpenFunc
 	name string
 	pri  int
-	op   OpenFunc
 }
 
 var srcTable = make([]*srcOpenTab, 0, 20)

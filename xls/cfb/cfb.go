@@ -61,19 +61,19 @@ const (
 )
 
 type directory struct {
-	Name                   [32]uint16 // 32 utf16 characters
-	NameByteLen            int16      // length of Name in bytes
-	ObjectType             objectType
-	ColorFlag              byte   // 0=red, 1=black
-	LeftSiblingID          uint32 // stream ids
-	RightSiblingID         uint32
-	ChildID                uint32
-	ClassID                [2]uint64 // GUID
-	StateBits              uint32
-	CreationTime           int64
-	ModifiedTime           int64
-	StartingSectorLocation int32
+	ClassID                [2]uint64
 	StreamSize             uint64
+	ModifiedTime           int64
+	CreationTime           int64
+	ChildID                uint32
+	RightSiblingID         uint32
+	LeftSiblingID          uint32
+	StartingSectorLocation int32
+	StateBits              uint32
+	Name                   [32]uint16
+	NameByteLen            int16
+	ColorFlag              byte
+	ObjectType             objectType
 }
 
 func (d *directory) String() string {

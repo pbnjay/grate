@@ -73,23 +73,16 @@ func (d *rc4Writer) SetPassword(password []byte) {
 }
 
 type rc4Writer struct {
-	block  uint32
-	offset int
-	bytes  [1024]byte
+	dec    *rc4.Cipher
+	encKey []byte // decrypter for RC4 content streams
 
-	// records the decrypted data
-	buf bytes.Buffer
-
-	///////
-
-	// decrypter for RC4 content streams
-	dec *rc4.Cipher
-
-	cipherKey []byte // H1 per 2.3.6.2
-	encKey    []byte // Hfinal per 2.3.6.2
-
-	Salt     []byte
-	Password []rune
+	Salt      []byte
+	Password  []rune
+	cipherKey []byte
+	buf       bytes.Buffer
+	offset    int
+	block     uint32
+	bytes     [1024]byte // records the decrypted data
 }
 
 func (d *rc4Writer) Bytes() []byte {

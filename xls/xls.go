@@ -24,25 +24,21 @@ var _ = grate.Register("xls", 1, Open)
 
 // WorkBook represents an Excel workbook containing 1 or more sheets.
 type WorkBook struct {
-	filename string
-	ctx      context.Context
-	doc      *cfb.Document
-
-	prot     bool
-	h        *header
-	sheets   []*boundSheet
-	codepage uint16
-	dateMode uint16
-	strings  []string
-
-	password   string
-	substreams [][]*rec
-
-	fpos          int64
+	ctx           context.Context
 	pos2substream map[int64]int
-
-	nfmt commonxl.Formatter
-	xfs  []uint16
+	doc           *cfb.Document
+	h             *header
+	nfmt          commonxl.Formatter
+	password      string
+	filename      string
+	xfs           []uint16
+	strings       []string
+	sheets        []*boundSheet
+	substreams    [][]*rec
+	fpos          int64
+	codepage      uint16
+	dateMode      uint16
+	prot          bool
 }
 
 func (b *WorkBook) IsProtected() bool {
@@ -99,11 +95,10 @@ func (b *WorkBook) loadFromStreamWithDecryptor(raw []byte, dec crypto.Decryptor)
 	zeros := [8224]byte{}
 
 	type overlay struct {
-		Pos int
-
+		Data      []byte
+		Pos       int
 		RecType   recordType
 		DataBytes uint16
-		Data      []byte // NB len() not necessarily = DataBytes
 	}
 	replaceBlocks := []overlay{}
 

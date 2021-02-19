@@ -164,12 +164,12 @@ var (
 )
 
 type stats struct {
+	Err       error
 	Filename  string
 	Hash      string
 	SheetName string
 	NumRows   int
 	NumCols   int
-	Err       error
 }
 
 func processFile(fn string) ([]stats, error) {
