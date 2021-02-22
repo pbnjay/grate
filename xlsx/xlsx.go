@@ -27,7 +27,7 @@ type Document struct {
 	rels    map[string]map[string]string
 	sheets  []*Sheet
 	strings []string
-	xfs     []commonxl.FmtFunc
+	xfs     []uint16
 	fmt     commonxl.Formatter
 }
 
@@ -163,7 +163,7 @@ func (d *Document) Get(sheetName string) (grate.Collection, error) {
 			if s.err == errNotLoaded {
 				s.err = s.parseSheet()
 			}
-			return s, s.err
+			return s.wrapped, s.err
 		}
 	}
 	return nil, errors.New("xlsx: sheet not found")

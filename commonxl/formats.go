@@ -9,8 +9,9 @@ import (
 
 // Formatter contains formatting methods common to Excel spreadsheets.
 type Formatter struct {
-	flags       uint64
-	customCodes map[uint16]FmtFunc
+	flags           uint64
+	customCodes     map[uint16]FmtFunc
+	customCodeTypes map[uint16]CellType
 }
 
 const (
@@ -31,6 +32,7 @@ func (x *Formatter) Mode1904(enabled bool) {
 func (x *Formatter) Add(fmtID uint16, formatCode string) error {
 	if x.customCodes == nil {
 		x.customCodes = make(map[uint16]FmtFunc)
+		x.customCodeTypes = make(map[uint16]CellType)
 	}
 	if strings.ToLower(formatCode) == "general" {
 		x.customCodes[fmtID] = goFormatters[0]
@@ -46,8 +48,19 @@ func (x *Formatter) Add(fmtID uint16, formatCode string) error {
 		return errors.New("grate/commonxl: cannot replace existing number formats")
 	}
 
-	x.customCodes[fmtID] = makeFormatter(formatCode)
+	x.customCodes[fmtID], x.customCodeTypes[fmtID] = makeFormatter(formatCode)
 	return nil
+}
+
+func (x *Formatter) getCellType(fmtID uint16) (CellType, bool) {
+	if ct, ok := builtInFormatTypes[fmtID]; ok {
+		return ct, true
+	}
+	if x.customCodeTypes != nil {
+		ct, ok := x.customCodeTypes[fmtID]
+		return ct, ok
+	}
+	return 0, false
 }
 
 var (
@@ -60,18 +73,18 @@ var (
 	formatMatchTextLiteral = regexp.MustCompile(`"[^"]*"`)
 )
 
-func makeFormatter(s string) FmtFunc {
+func makeFormatter(s string) (FmtFunc, CellType) {
 	//log.Printf("makeFormatter('%s')", s)
 	// remove any coloring marks
 	s = formatMatchBrackets.ReplaceAllString(s, "")
 	if strings.Contains(s, ";") {
 		parts := strings.Split(s, ";")
-		posFF := makeFormatter(parts[0])
+		posFF, ctypePos := makeFormatter(parts[0])
 		rem := make([]FmtFunc, len(parts)-1)
 		for i, ps := range parts[1:] {
-			rem[i] = makeFormatter(ps)
+			rem[i], _ = makeFormatter(ps)
 		}
-		return switchFmtFunc(posFF, rem...)
+		return switchFmtFunc(posFF, rem...), ctypePos
 	}
 
 	// escaped characters, and quoted text
@@ -111,10 +124,11 @@ func makeFormatter(s string) FmtFunc {
 		s = fixEsc.ReplaceAllString(s, `$1`)
 
 		//log.Printf("   made time formatter '%s'", s)
-		return timeFmtFunc(s)
+		return timeFmtFunc(s), DateCell
 	}
 
 	var ff FmtFunc
+	var ctype CellType
 	if strings.ContainsAny(s, ".Ee") {
 		verb := "f"
 		if strings.ContainsAny(s, "Ee") {
@@ -132,6 +146,7 @@ func makeFormatter(s string) FmtFunc {
 		sf := fmt.Sprintf("%%%d.%d%s", i3-i1, i3-i2, verb)
 		//log.Printf("   made float formatter '%s'", sf)
 		ff = sprintfFunc(sf, mul)
+		ctype = FloatCell
 	} else {
 		s2 := strings.ReplaceAll(s, ",", "")
 		i1 := strings.IndexAny(s2, "0")
@@ -146,6 +161,7 @@ func makeFormatter(s string) FmtFunc {
 		}
 		//log.Printf("   made int formatter '%s'", sf)
 		ff = sprintfFunc(sf, mul)
+		ctype = IntegerCell
 	}
 
 	if strings.Contains(s, ",") {
@@ -162,10 +178,10 @@ func makeFormatter(s string) FmtFunc {
 	}
 	if len(prepost) == 1 {
 		if prepost[0] == "@" {
-			return identFunc
+			return identFunc, StringCell
 		}
 		//log.Printf("   added static ('%s')", prepost[0])
-		return staticFmtFunc(prepost[0])
+		return staticFmtFunc(prepost[0]), StringCell
 	}
 	if len(prepost[0]) > 0 || len(prepost[1]) > 0 {
 		prepost[1] = nonEsc.ReplaceAllString(prepost[1], `$1`)
@@ -176,7 +192,7 @@ func makeFormatter(s string) FmtFunc {
 		//log.Printf("   added surround ('%s' ... '%s')", prepost[0], prepost[1])
 	}
 
-	return ff
+	return ff, ctype
 }
 
 // Get the number format func to use for formatting values,
@@ -287,4 +303,79 @@ var builtInFormats = map[uint16]string{
 	79: `[h]:mm:ss`,     // `[ช]:นน:ทท`,
 	80: `mm:ss.0`,       // `นน:ทท.0`,
 	81: `d/m/bb`,        // `d/m/bb`,
+}
+
+// builtInFormatTypes are the underlying datatypes for built-in number formats in XLS/XLSX.
+var builtInFormatTypes = map[uint16]CellType{
+	// 0 has no defined type
+	1:  IntegerCell,
+	2:  FloatCell,
+	3:  IntegerCell,
+	4:  FloatCell,
+	9:  FloatCell,
+	10: FloatCell,
+
+	11: FloatCell,
+	12: FloatCell,
+	13: FloatCell,
+	14: DateCell,
+	15: DateCell,
+	16: DateCell,
+	17: DateCell,
+	18: DateCell,
+	19: DateCell,
+	20: DateCell,
+	21: DateCell,
+	22: DateCell,
+	37: IntegerCell,
+	38: IntegerCell,
+	39: FloatCell,
+	40: FloatCell,
+	41: IntegerCell,
+	42: IntegerCell,
+	43: FloatCell,
+	44: FloatCell,
+	45: DateCell, // Durations?
+	46: DateCell,
+	47: DateCell,
+	48: FloatCell,
+	49: StringCell,
+	27: DateCell,
+	28: DateCell,
+	29: DateCell,
+	30: DateCell,
+	31: DateCell,
+	32: DateCell,
+	33: DateCell,
+	34: DateCell,
+	35: DateCell,
+	36: DateCell,
+	50: DateCell,
+	51: DateCell,
+	52: DateCell,
+	53: DateCell,
+	54: DateCell,
+	55: DateCell,
+	56: DateCell,
+	57: DateCell,
+	58: DateCell,
+	59: IntegerCell,
+	60: FloatCell,
+	61: IntegerCell,
+	62: FloatCell,
+	67: FloatCell,
+	68: FloatCell,
+	69: FloatCell,
+	70: FloatCell,
+	71: DateCell,
+	72: DateCell,
+	73: DateCell,
+	74: DateCell,
+	75: DateCell,
+	76: DateCell,
+	77: DateCell,
+	78: DateCell,
+	79: DateCell,
+	80: DateCell,
+	81: DateCell,
 }

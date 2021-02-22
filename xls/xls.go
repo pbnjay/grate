@@ -282,11 +282,13 @@ func (b *WorkBook) loadFromStream2(raw []byte, isDecrypted bool) error {
 				if b.h.RupYear != 0x07CC && b.h.RupYear != 0x07CD {
 					return errors.New("xls: unsupported biff version")
 				}
-				if b.h.DocType != 0x0005 && b.h.DocType != 0x0010 {
-					// we only support the workbook or worksheet substreams
-					log.Println("xls: unsupported document type")
-					//break
-				}
+				/*
+					if b.h.DocType != 0x0005 && b.h.DocType != 0x0010 {
+						// we only support the workbook or worksheet substreams
+						log.Println("xls: unsupported document type")
+						//break
+					}
+				*/
 
 			case RecTypeCodePage:
 				// BIFF8 is entirely UTF-16LE so this is actually ignored

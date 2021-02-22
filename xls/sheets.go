@@ -3,13 +3,12 @@ package xls
 import (
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"log"
 	"math"
-	"time"
 	"unicode/utf16"
 
 	"github.com/pbnjay/grate"
+	"github.com/pbnjay/grate/commonxl"
 )
 
 // List (visible) sheet names from the workbook.
@@ -39,94 +38,24 @@ func (b *WorkBook) Get(sheetName string) (grate.Collection, error) {
 	for _, s := range b.sheets {
 		if s.Name == sheetName {
 			ss := b.pos2substream[int64(s.Position)]
-			ws := &WorkSheet{
-				b: b, s: s, ss: ss,
-				iterRow: -1,
-			}
-			return ws, ws.parse()
+			return b.parseSheet(s, ss)
 		}
 	}
 	return nil, errors.New("xls: sheet not found")
 }
 
-// WorkSheet holds various metadata about a sheet in a Workbook.
-type WorkSheet struct {
-	b   *WorkBook
-	s   *boundSheet
-	ss  int
-	err error
-
-	minRow int
-	maxRow int // maximum valid row index (0xFFFF)
-	minCol int
-	maxCol int // maximum valid column index (0xFF)
-	rows   []*row
-	empty  bool
-
-	iterRow int
-	iterMC  int
-}
-
-type staticCellType rune
-
-const (
-	staticBlank staticCellType = 0
-
-	// marks a continuation column within a merged cell.
-	continueColumnMerged staticCellType = '→'
-	// marks the last column of a merged cell.
-	endColumnMerged staticCellType = '⇥'
-
-	// marks a continuation row within a merged cell.
-	continueRowMerged staticCellType = '↓'
-	// marks the last row of a merged cell.
-	endRowMerged staticCellType = '⤓'
-)
-
-func (s staticCellType) String() string {
-	if s == 0 {
-		return ""
+func (b *WorkBook) parseSheet(s *boundSheet, ss int) (*commonxl.Sheet, error) {
+	res := &commonxl.Sheet{
+		Formatter: &b.nfmt,
 	}
-	return string([]rune{rune(s)})
-}
+	var minRow, maxRow uint32
+	var minCol, maxCol uint16
 
-type row struct {
-	// each value must be one of: int, float64, string, or time.Time
-	cols []interface{}
-}
-
-func (s *WorkSheet) makeCells() {
-	// ensure we always have a complete matrix
-	for len(s.rows) <= s.maxRow {
-		emptyRow := make([]interface{}, s.maxCol+1)
-		s.rows = append(s.rows, &row{emptyRow})
-	}
-}
-
-func (s *WorkSheet) placeValue(rowIndex, colIndex int, val interface{}) {
-	if colIndex > s.maxCol || rowIndex > s.maxRow {
-		// invalid
-		return
-	}
-	// ensure we always have a complete matrix
-	for len(s.rows) <= rowIndex {
-		emptyRow := make([]interface{}, s.maxCol+1)
-		s.rows = append(s.rows, &row{emptyRow})
-	}
-
-	s.rows[rowIndex].cols[colIndex] = val
-}
-
-func (s *WorkSheet) IsEmpty() bool {
-	return s.empty
-}
-
-func (s *WorkSheet) parse() error {
 	// temporary string buffer
 	us := make([]uint16, 8224)
 
 	inSubstream := 0
-	for idx, r := range s.b.substreams[s.ss] {
+	for idx, r := range b.substreams[ss] {
 		if inSubstream > 0 {
 			if r.RecType == RecTypeEOF {
 				inSubstream--
@@ -145,15 +74,15 @@ func (s *WorkSheet) parse() error {
 		case RecTypeWsBool:
 			if (r.Data[1] & 0x10) != 0 {
 				// it's a dialog
-				return nil
+				return nil, nil
 			}
 
 		case RecTypeDimensions:
 			// max = 0-based index of the row AFTER the last valid index
-			minRow := binary.LittleEndian.Uint32(r.Data[:4])
-			maxRow := binary.LittleEndian.Uint32(r.Data[4:8]) // max = 0x010000
-			minCol := binary.LittleEndian.Uint16(r.Data[8:10])
-			maxCol := binary.LittleEndian.Uint16(r.Data[10:12]) // max = 0x000100
+			minRow = binary.LittleEndian.Uint32(r.Data[:4])
+			maxRow = binary.LittleEndian.Uint32(r.Data[4:8]) // max = 0x010000
+			minCol = binary.LittleEndian.Uint16(r.Data[8:10])
+			maxCol = binary.LittleEndian.Uint16(r.Data[10:12]) // max = 0x000100
 			if grate.Debug {
 				log.Printf("    Sheet dimensions (%d, %d) - (%d,%d)",
 					minCol, minRow, maxCol, maxRow)
@@ -164,21 +93,15 @@ func (s *WorkSheet) parse() error {
 			if minCol > 0x00FF || maxCol > 0x0100 {
 				log.Println("invalid dimensions")
 			}
-			s.minRow = int(uint64(minRow) & 0x0FFFF)
-			s.maxRow = int(uint64(maxRow)&0x1FFFF) - 1 // translate to last valid index
-			s.minCol = int(uint64(minCol) & 0x000FF)
-			s.maxCol = int(uint64(maxCol)&0x001FF) - 1 // translate to last valid index
-			if (maxRow-minRow) == 0 || (maxCol-minCol) == 0 {
-				s.empty = true
-			}
+
 			// pre-allocate cells
-			s.makeCells()
+			res.Resize(int(maxRow), int(maxCol))
 		}
 	}
 	inSubstream = 0
 
 	var formulaRow, formulaCol uint16
-	for ridx, r := range s.b.substreams[s.ss] {
+	for ridx, r := range b.substreams[ss] {
 		if inSubstream > 0 {
 			if r.RecType == RecTypeEOF {
 				inSubstream--
@@ -216,15 +139,11 @@ func (s *WorkSheet) parse() error {
 				if r.Data[6] == 1 {
 					bv = true
 				}
-				var rval interface{} = bv
 				var fno uint16
-				if ixfe < len(s.b.xfs) {
-					fno = s.b.xfs[ixfe]
+				if ixfe < len(b.xfs) {
+					fno = b.xfs[ixfe]
 				}
-				if fval, ok := s.b.nfmt.Apply(fno, bv); ok {
-					rval = fval
-				}
-				s.placeValue(rowIndex, colIndex, rval)
+				res.Put(rowIndex, colIndex, bv, fno)
 				//log.Printf("bool/error spec: %d %d %+v", rowIndex, colIndex, bv)
 			} else {
 				// it's an error, load the label
@@ -232,7 +151,7 @@ func (s *WorkSheet) parse() error {
 				if !ok {
 					be = "<unknown error>"
 				}
-				s.placeValue(rowIndex, colIndex, be)
+				res.Put(rowIndex, colIndex, be, 0)
 				//log.Printf("bool/error spec: %d %d %s", rowIndex, colIndex, be)
 			}
 
@@ -253,11 +172,10 @@ func (s *WorkSheet) parse() error {
 					rval = value.Float64()
 				}
 				var fno uint16
-				if ixfe < len(s.b.xfs) {
-					fno = s.b.xfs[ixfe]
+				if ixfe < len(b.xfs) {
+					fno = b.xfs[ixfe]
 				}
-				rval, _ = s.b.nfmt.Apply(fno, rval)
-				s.placeValue(rowIndex, colIndex+i, rval)
+				res.Put(rowIndex, colIndex+i, rval, fno)
 			}
 			//log.Printf("mulrow spec: %+v", *mr)
 
@@ -269,12 +187,10 @@ func (s *WorkSheet) parse() error {
 
 			value := math.Float64frombits(xnum)
 			var fno uint16
-			if ixfe < len(s.b.xfs) {
-				fno = s.b.xfs[ixfe]
+			if ixfe < len(b.xfs) {
+				fno = b.xfs[ixfe]
 			}
-			rval, _ := s.b.nfmt.Apply(fno, value)
-
-			s.placeValue(rowIndex, colIndex, rval)
+			res.Put(rowIndex, colIndex, value, fno)
 			//log.Printf("Number spec: %d %d = %f", rowIndex, colIndex, value)
 
 		case RecTypeRK:
@@ -290,11 +206,10 @@ func (s *WorkSheet) parse() error {
 				rval = value.Float64()
 			}
 			var fno uint16
-			if ixfe < len(s.b.xfs) {
-				fno = s.b.xfs[ixfe]
+			if ixfe < len(b.xfs) {
+				fno = b.xfs[ixfe]
 			}
-			rval, _ = s.b.nfmt.Apply(fno, rval)
-			s.placeValue(rowIndex, colIndex, rval)
+			res.Put(rowIndex, colIndex, rval, fno)
 			//log.Printf("RK spec: %d %d = %s", rowIndex, colIndex, rr.Value.String())
 
 		case RecTypeFormula:
@@ -302,32 +217,30 @@ func (s *WorkSheet) parse() error {
 			formulaCol = binary.LittleEndian.Uint16(r.Data[2:4])
 			ixfe := int(binary.LittleEndian.Uint16(r.Data[4:6]))
 			fdata := r.Data[6:]
+			var fno uint16
+			if ixfe < len(b.xfs) {
+				fno = b.xfs[ixfe]
+			}
 			if fdata[6] == 0xFF && r.Data[7] == 0xFF {
 				switch fdata[0] {
 				case 0:
 					// string in next record
+					// put placeholder now to record the numFmt
+					res.Put(int(formulaRow), int(formulaCol), "", fno)
 				case 1:
 					// boolean
 					bv := false
 					if fdata[2] != 0 {
 						bv = true
 					}
-					var rval interface{} = bv
-					var fno uint16
-					if ixfe < len(s.b.xfs) {
-						fno = s.b.xfs[ixfe]
-					}
-					if fval, ok := s.b.nfmt.Apply(fno, bv); ok {
-						rval = fval
-					}
-					s.placeValue(int(formulaRow), int(formulaCol), rval)
+					res.Put(int(formulaRow), int(formulaCol), bv, fno)
 				case 2:
 					// error value
 					be, ok := berrLookup[fdata[2]]
 					if !ok {
 						be = "<unknown error>"
 					}
-					s.placeValue(int(formulaRow), int(formulaCol), be)
+					res.Put(int(formulaRow), int(formulaCol), be, 0)
 				case 3:
 					// blank string
 				default:
@@ -336,12 +249,7 @@ func (s *WorkSheet) parse() error {
 			} else {
 				xnum := binary.LittleEndian.Uint64(r.Data[6:])
 				value := math.Float64frombits(xnum)
-				var fno uint16
-				if ixfe < len(s.b.xfs) {
-					fno = s.b.xfs[ixfe]
-				}
-				rval, _ := s.b.nfmt.Apply(fno, value)
-				s.placeValue(int(formulaRow), int(formulaCol), rval)
+				res.Put(int(formulaRow), int(formulaCol), value, fno)
 			}
 			//log.Printf("formula spec: %d %d ~~ %+v", formulaRow, formulaCol, r.Data)
 
@@ -370,11 +278,11 @@ func (s *WorkSheet) parse() error {
 				fstr = string(utf16.Decode(us))
 			}
 
-			if (ridx + 1) < len(s.b.substreams[s.ss]) {
+			if (ridx + 1) < len(b.substreams[ss]) {
 				ridx2 := ridx + 1
-				nrecs := len(s.b.substreams[s.ss])
+				nrecs := len(b.substreams[ss])
 				for ridx2 < nrecs {
-					r2 := s.b.substreams[s.ss][ridx2]
+					r2 := b.substreams[ss][ridx2]
 					if r2.RecType != RecTypeContinue {
 						break
 					}
@@ -393,20 +301,22 @@ func (s *WorkSheet) parse() error {
 					ridx2++
 				}
 			}
-			// TODO: does formula record formatted dates as pre-computed strings?
-			s.placeValue(int(formulaRow), int(formulaCol), fstr)
+			res.Set(int(formulaRow), int(formulaCol), fstr)
 
 		case RecTypeLabelSst:
 			rowIndex := int(binary.LittleEndian.Uint16(r.Data[:2]))
 			colIndex := int(binary.LittleEndian.Uint16(r.Data[2:4]))
-			//ixfe := binary.LittleEndian.Uint16(r.Data[4:6])
+			ixfe := int(binary.LittleEndian.Uint16(r.Data[4:6]))
 			sstIndex := int(binary.LittleEndian.Uint32(r.Data[6:]))
-			if sstIndex > len(s.b.strings) {
-				return errors.New("xls: invalid sst index")
+			if sstIndex > len(b.strings) {
+				return nil, errors.New("xls: invalid sst index")
 			}
-			// FIXME: double check that ixfe doesn't modify output
-			if s.b.strings[sstIndex] != "" {
-				s.placeValue(rowIndex, colIndex, s.b.strings[sstIndex])
+			var fno uint16
+			if ixfe < len(b.xfs) {
+				fno = b.xfs[ixfe]
+			}
+			if b.strings[sstIndex] != "" {
+				res.Put(rowIndex, colIndex, b.strings[sstIndex], fno)
 			}
 			//log.Printf("SST spec: %d %d = [%d] %s", rowIndex, colIndex, sstIndex, s.b.strings[sstIndex])
 
@@ -415,19 +325,19 @@ func (s *WorkSheet) parse() error {
 			lastRow := binary.LittleEndian.Uint16(r.Data[2:4])
 			firstCol := binary.LittleEndian.Uint16(r.Data[4:6])
 			lastCol := binary.LittleEndian.Uint16(r.Data[6:])
-			if int(firstCol) > s.maxCol {
+			if int(firstCol) > int(maxCol) {
 				//log.Println("invalid hyperlink column")
 				continue
 			}
-			if int(firstRow) > s.maxRow {
+			if int(firstRow) > int(maxRow) {
 				//log.Println("invalid hyperlink row")
 				continue
 			}
 			if lastRow == 0xFFFF { // placeholder value indicate "last"
-				lastRow = uint16(s.maxRow)
+				lastRow = uint16(maxRow) - 1
 			}
 			if lastCol == 0xFF { // placeholder value indicate "last"
-				lastCol = uint16(s.maxCol)
+				lastCol = uint16(maxCol) - 1
 			}
 
 			// decode the hyperlink datastructure and try to find the
@@ -443,19 +353,19 @@ func (s *WorkSheet) parse() error {
 				for cn := int(firstCol); cn <= int(lastCol); cn++ {
 					if rn == int(firstRow) && cn == int(firstCol) {
 						// TODO: provide custom hooks for how to handle links in output
-						s.placeValue(rn, cn, displayText+" <"+linkText+">")
+						res.Put(rn, cn, displayText+" <"+linkText+">", 0)
 					} else if cn == int(firstCol) {
 						// first and last column MAY be the same
 						if rn == int(lastRow) {
-							s.placeValue(rn, cn, endRowMerged)
+							res.Put(rn, cn, grate.EndRowMerged, 0)
 						} else {
-							s.placeValue(rn, cn, continueRowMerged)
+							res.Put(rn, cn, grate.ContinueRowMerged, 0)
 						}
 					} else if cn == int(lastCol) {
 						// first and last column are NOT the same
-						s.placeValue(rn, cn, endColumnMerged)
+						res.Put(rn, cn, grate.EndColumnMerged, 0)
 					} else {
-						s.placeValue(rn, cn, continueColumnMerged)
+						res.Put(rn, cn, grate.ContinueColumnMerged, 0)
 					}
 				}
 			}
@@ -482,10 +392,10 @@ func (s *WorkSheet) parse() error {
 				raw = raw[8:]
 
 				if lastRow == 0xFFFF { // placeholder value indicate "last"
-					lastRow = uint16(s.maxRow)
+					lastRow = uint16(maxRow) - 1
 				}
 				if lastCol == 0xFF { // placeholder value indicate "last"
-					lastCol = uint16(s.maxCol)
+					lastCol = uint16(maxCol) - 1
 				}
 				for rn := int(firstRow); rn <= int(lastRow); rn++ {
 					for cn := int(firstCol); cn <= int(lastCol); cn++ {
@@ -494,15 +404,15 @@ func (s *WorkSheet) parse() error {
 						} else if cn == int(firstCol) {
 							// first and last column MAY be the same
 							if rn == int(lastRow) {
-								s.placeValue(rn, cn, endRowMerged)
+								res.Put(rn, cn, grate.EndRowMerged, 0)
 							} else {
-								s.placeValue(rn, cn, continueRowMerged)
+								res.Put(rn, cn, grate.ContinueRowMerged, 0)
 							}
 						} else if cn == int(lastCol) {
 							// first and last column are NOT the same
-							s.placeValue(rn, cn, endColumnMerged)
+							res.Put(rn, cn, grate.EndColumnMerged, 0)
 						} else {
-							s.placeValue(rn, cn, continueColumnMerged)
+							res.Put(rn, cn, grate.ContinueColumnMerged, 0)
 						}
 					}
 				}
@@ -524,64 +434,7 @@ func (s *WorkSheet) parse() error {
 			*/
 		}
 	}
-	return nil
-}
-
-// Err returns the last error that occured.
-func (s *WorkSheet) Err() error {
-	return s.err
-}
-
-// Next advances to the next row of content.
-// It MUST be called prior to any Scan().
-func (s *WorkSheet) Next() bool {
-	s.iterRow++
-	return s.iterRow < len(s.rows)
-}
-
-// Strings returns the contents of the row as string types.
-func (s *WorkSheet) Strings() []string {
-	currow := s.rows[s.iterRow]
-	res := make([]string, len(currow.cols))
-	for i, col := range currow.cols {
-		if col == nil || col == "" {
-			continue
-		}
-		switch v := col.(type) {
-		case string:
-			res[i] = v
-		case fmt.Stringer:
-			res[i] = v.String()
-		default:
-			res[i] = fmt.Sprint(col)
-		}
-	}
-	return res
-}
-
-// Scan extracts values from the row into the provided arguments
-// Arguments must be pointers to one of 5 supported types:
-//     bool, int, float64, string, or time.Time
-func (s *WorkSheet) Scan(args ...interface{}) error {
-	currow := s.rows[s.iterRow]
-
-	for i, a := range args {
-		switch v := a.(type) {
-		case *bool:
-			*v = currow.cols[i].(bool)
-		case *int:
-			*v = currow.cols[i].(int)
-		case *float64:
-			*v = currow.cols[i].(float64)
-		case *string:
-			*v = currow.cols[i].(string)
-		case *time.Time:
-			*v = currow.cols[i].(time.Time)
-		default:
-			return grate.ErrInvalidScanType
-		}
-	}
-	return nil
+	return res, nil
 }
 
 var berrLookup = map[byte]string{

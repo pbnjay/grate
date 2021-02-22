@@ -9,7 +9,6 @@ import (
 	"strconv"
 
 	"github.com/pbnjay/grate"
-	"github.com/pbnjay/grate/commonxl"
 )
 
 func (d *Document) parseRels(dec *xml.Decoder, basedir string) error {
@@ -119,7 +118,7 @@ func (d *Document) parseStyles(dec *xml.Decoder) error {
 				section = 2
 				ax := getAttrs(v.Attr, "count")
 				n, _ := strconv.ParseInt(ax[0], 10, 64)
-				d.xfs = make([]commonxl.FmtFunc, 0, n)
+				d.xfs = make([]uint16, 0, n)
 
 			case "xf":
 				ax := getAttrs(v.Attr, "numFmtId", "applyNumberFormat", "xfId")
@@ -148,11 +147,7 @@ func (d *Document) parseStyles(dec *xml.Decoder) error {
 					}
 
 					nfid, _ := strconv.ParseInt(numFmtID, 10, 16)
-					thisXF, ok := d.fmt.Get(uint16(nfid))
-					if !ok {
-						panic("numformat unknown")
-					}
-					d.xfs = append(d.xfs, thisXF)
+					d.xfs = append(d.xfs, uint16(nfid))
 				} else {
 					panic("wheres is this xf??")
 				}

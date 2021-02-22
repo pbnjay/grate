@@ -3,13 +3,11 @@ package xlsx
 import (
 	"encoding/xml"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/pbnjay/grate"
 	"github.com/pbnjay/grate/commonxl"
@@ -23,24 +21,15 @@ type Sheet struct {
 
 	err error
 
-	minRow int
-	maxRow int
-	minCol int
-	maxCol int
-	rows   []*row
-	empty  bool
-
-	iterRow int
+	wrapped *commonxl.Sheet
 }
 
 var errNotLoaded = errors.New("xlsx: sheet not loaded")
 
-type row struct {
-	// each value must be one of: int, float64, string, or time.Time
-	cols []interface{}
-}
-
 func (s *Sheet) parseSheet() error {
+	s.wrapped = &commonxl.Sheet{
+		Formatter: &s.d.fmt,
+	}
 	linkmap := make(map[string]string)
 	base := filepath.Base(s.docname)
 	sub := strings.TrimSuffix(s.docname, base)
@@ -68,7 +57,9 @@ func (s *Sheet) parseSheet() error {
 
 	currentCellType := BlankCellType
 	currentCell := ""
-	var numFormat commonxl.FmtFunc
+	var fno uint16
+	var maxCol, maxRow int
+
 	tok, err := dec.RawToken()
 	for ; err == nil; tok, err = dec.RawToken() {
 		switch v := tok.(type) {
@@ -79,6 +70,7 @@ func (s *Sheet) parseSheet() error {
 			c, r := refToIndexes(currentCell)
 			if c >= 0 && r >= 0 {
 				var val interface{} = string(v)
+
 				switch currentCellType {
 				case BooleanCellType:
 					if v[0] == '1' {
@@ -87,13 +79,12 @@ func (s *Sheet) parseSheet() error {
 						val = false
 					}
 				case DateCellType:
-					log.Println("CELL DATE", val, numFormat)
+					log.Println("CELL DATE", val, fno)
 				case NumberCellType:
 					fval, err := strconv.ParseFloat(string(v), 64)
 					if err == nil {
 						val = fval
 					}
-					val = numFormat(&s.d.fmt, fval)
 					//log.Println("CELL NUMBER", val, numFormat)
 				case SharedStringCellType:
 					//log.Println("CELL SHSTR", val, currentCellType, numFormat)
@@ -106,9 +97,9 @@ func (s *Sheet) parseSheet() error {
 				case ErrorCellType, FormulaStringCellType, InlineStringCellType:
 					//log.Println("CELL ERR/FORM/INLINE", val, currentCellType)
 				default:
-					log.Println("CELL UNKNOWN", val, currentCellType, numFormat)
+					log.Println("CELL UNKNOWN", val, currentCellType, fno)
 				}
-				s.placeValue(r, c, val)
+				s.wrapped.Put(r, c, val, fno)
 			} else {
 				//log.Println("FAIL row/col: ", currentCell)
 			}
@@ -117,20 +108,19 @@ func (s *Sheet) parseSheet() error {
 			case "dimension":
 				ax := getAttrs(v.Attr, "ref")
 				if ax[0] == "A1" {
+					maxCol, maxRow = 1, 1
 					// short-circuit empty sheet
-					s.minCol, s.minRow = 0, 0
-					s.maxCol, s.maxRow = 1, 1
-					s.empty = true
+					s.wrapped.Resize(1, 1)
 					continue
 				}
 				dims := strings.Split(ax[0], ":")
 				if len(dims) == 1 {
-					s.minCol, s.minRow = 0, 0
-					s.maxCol, s.maxRow = refToIndexes(dims[0])
+					maxCol, maxRow = refToIndexes(dims[0])
 				} else {
-					s.minCol, s.minRow = refToIndexes(dims[0])
-					s.maxCol, s.maxRow = refToIndexes(dims[1])
+					//minCol, minRow := refToIndexes(dims[0])
+					maxCol, maxRow = refToIndexes(dims[1])
 				}
+				s.wrapped.Resize(maxRow, maxCol)
 				//log.Println("DIMENSION:", s.minRow, s.minCol, ">", s.maxRow, s.maxCol)
 			case "row":
 				//currentRow = ax["r"] // unsigned int row index
@@ -145,9 +135,9 @@ func (s *Sheet) parseSheet() error {
 				style := ax[2]
 				sid, _ := strconv.ParseInt(style, 10, 64)
 				if len(s.d.xfs) > int(sid) {
-					numFormat = s.d.xfs[sid] // unsigned integer lookup
+					fno = s.d.xfs[sid]
 				} else {
-					numFormat = s.d.xfs[0]
+					fno = 0
 				}
 				//log.Println("CELL", currentCell, sid, numFormat, currentCellType)
 			case "v":
@@ -161,6 +151,12 @@ func (s *Sheet) parseSheet() error {
 				if len(dims) > 1 {
 					endCol, endRow = refToIndexes(dims[1])
 				}
+				if endRow > maxRow {
+					endRow = maxRow
+				}
+				if endCol > maxCol {
+					endCol = maxCol
+				}
 				for r := startRow; r <= endRow; r++ {
 					for c := startCol; c <= endCol; c++ {
 						if r == startRow && c == startCol {
@@ -168,15 +164,15 @@ func (s *Sheet) parseSheet() error {
 						} else if c == startCol {
 							// first and last column MAY be the same
 							if r == endRow {
-								s.placeValue(r, c, endRowMerged)
+								s.wrapped.Put(r, c, grate.EndRowMerged, 0)
 							} else {
-								s.placeValue(r, c, continueRowMerged)
+								s.wrapped.Put(r, c, grate.ContinueRowMerged, 0)
 							}
 						} else if c == endCol {
 							// first and last column are NOT the same
-							s.placeValue(r, c, endColumnMerged)
+							s.wrapped.Put(r, c, grate.EndColumnMerged, 0)
 						} else {
-							s.placeValue(r, c, continueColumnMerged)
+							s.wrapped.Put(r, c, grate.ContinueColumnMerged, 0)
 						}
 					}
 				}
@@ -185,12 +181,8 @@ func (s *Sheet) parseSheet() error {
 				ax := getAttrs(v.Attr, "ref", "id")
 				col, row := refToIndexes(ax[0])
 				link := linkmap[ax[1]]
-				if len(s.rows) > row && len(s.rows[row].cols) > col {
-					if sstr, ok := s.rows[row].cols[col].(string); ok {
-						link = sstr + " <" + link + ">"
-					}
-				}
-				s.placeValue(row, col, link)
+				s.wrapped.Put(row, col, link, 0)
+				s.wrapped.SetURL(row, col, link)
 
 			case "worksheet", "mergeCells", "hyperlinks":
 				// containers
@@ -219,72 +211,4 @@ func (s *Sheet) parseSheet() error {
 		err = nil
 	}
 	return err
-}
-
-func (s *Sheet) placeValue(rowIndex, colIndex int, val interface{}) {
-	if colIndex > s.maxCol || rowIndex > s.maxRow {
-		// invalid
-		return
-	}
-
-	// ensure we always have a complete matrix
-	for len(s.rows) <= rowIndex {
-		emptyRow := make([]interface{}, s.maxCol+1)
-		s.rows = append(s.rows, &row{emptyRow})
-	}
-	s.empty = false
-	s.rows[rowIndex].cols[colIndex] = val
-}
-
-// Next advances to the next row of content.
-// It MUST be called prior to any Scan().
-func (s *Sheet) Next() bool {
-	s.iterRow++
-	return s.iterRow < len(s.rows)
-}
-
-func (s *Sheet) Strings() []string {
-	currow := s.rows[s.iterRow]
-	res := make([]string, len(currow.cols))
-	for i, col := range currow.cols {
-		if col == nil || col == "" {
-			continue
-		}
-		res[i] = fmt.Sprint(col)
-	}
-	return res
-}
-
-// Scan extracts values from the row into the provided arguments
-// Arguments must be pointers to one of 5 supported types:
-//     bool, int, float64, string, or time.Time
-func (s *Sheet) Scan(args ...interface{}) error {
-	currow := s.rows[s.iterRow]
-
-	for i, a := range args {
-		switch v := a.(type) {
-		case *bool:
-			*v = currow.cols[i].(bool)
-		case *int:
-			*v = currow.cols[i].(int)
-		case *float64:
-			*v = currow.cols[i].(float64)
-		case *string:
-			*v = currow.cols[i].(string)
-		case *time.Time:
-			*v = currow.cols[i].(time.Time)
-		default:
-			return grate.ErrInvalidScanType
-		}
-	}
-	return nil
-}
-
-func (s *Sheet) IsEmpty() bool {
-	return s.empty
-}
-
-// Err returns the last error that occured.
-func (s *Sheet) Err() error {
-	return s.err
 }

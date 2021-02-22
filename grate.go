@@ -31,7 +31,7 @@ type Collection interface {
 
 	// Scan extracts values from the current record into the provided arguments
 	// Arguments must be pointers to one of 5 supported types:
-	//     bool, int, float64, string, or time.Time
+	//     bool, int64, float64, string, or time.Time
 	// If invalid, returns ErrInvalidScanType
 	Scan(args ...interface{}) error
 
@@ -82,3 +82,15 @@ func Register(name string, priority int, opener OpenFunc) error {
 	})
 	return nil
 }
+
+const (
+	// ContinueColumnMerged marks a continuation column within a merged cell.
+	ContinueColumnMerged = "→"
+	// EndColumnMerged marks the last column of a merged cell.
+	EndColumnMerged = "⇥"
+
+	// ContinueRowMerged marks a continuation row within a merged cell.
+	ContinueRowMerged = "↓"
+	// EndRowMerged marks the last row of a merged cell.
+	EndRowMerged = "⤓"
+)

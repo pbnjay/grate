@@ -97,7 +97,10 @@ func TestDateFormats(t *testing.T) {
 
 	fx := &Formatter{}
 	for _, t := range testDates {
-		for fid := range builtInDateFormats {
+		for fid, ctype := range builtInFormatTypes {
+			if ctype != DateCell {
+				continue
+			}
 			ff, _ := goFormatters[fid]
 			// mainly testing these don't crash...
 			log.Println(ff(fx, t))
@@ -105,7 +108,7 @@ func TestDateFormats(t *testing.T) {
 	}
 }
 func TestBoolFormats(t *testing.T) {
-	ff := makeFormatter(`"yes";"yes";"no"`)
+	ff, _ := makeFormatter(`"yes";"yes";"no"`)
 
 	if "no" != ff(nil, false) {
 		t.Fatal(`false should be "no"`)

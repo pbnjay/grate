@@ -59,6 +59,8 @@ func timeFmtFunc(f string) FmtFunc {
 	}
 }
 
+// same as above but replaces "AM" and "PM" with chinese translations.
+// TODO: implement others
 func cnTimeFmtFunc(f string) FmtFunc {
 	return func(x *Formatter, v interface{}) string {
 		t, ok := v.(time.Time)
@@ -73,13 +75,4 @@ func cnTimeFmtFunc(f string) FmtFunc {
 		s = strings.Replace(s, `AM`, `上午`, 1)
 		return strings.Replace(s, `PM`, `下午`, 1)
 	}
-}
-
-// 0x0001 = date   0b0010 = time    0b0011 = date+time
-var builtInDateFormats = map[uint16]byte{
-	14: 1, 15: 1, 16: 1, 17: 1, 18: 2, 19: 2, 20: 2, 21: 2, 22: 3,
-	45: 2, 46: 2, 47: 2, 27: 1, 28: 1, 29: 1, 30: 1, 31: 1, 32: 2,
-	33: 2, 34: 2, 35: 2, 36: 1, 50: 1, 51: 1, 52: 1, 53: 1, 54: 1,
-	55: 2, 56: 2, 57: 1, 58: 1, 71: 1, 72: 1, 73: 1, 74: 1, 75: 2,
-	76: 2, 77: 3, 78: 2, 79: 2, 80: 2, 81: 1,
 }

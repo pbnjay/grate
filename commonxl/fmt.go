@@ -124,6 +124,7 @@ func convertToFloat64(v interface{}) (float64, bool) {
 	}
 }
 
+// replaces a zero with a dash
 func zeroDashFunc(ff FmtFunc) FmtFunc {
 	return func(x *Formatter, v interface{}) string {
 		fval, ok := convertToFloat64(v)
@@ -152,7 +153,8 @@ func fracFmtFunc(n int) FmtFunc {
 	}
 }
 
-// handle (up to) all four format cases
+// handle (up to) all four format cases:
+// positive;negative;zero;other
 func switchFmtFunc(pos FmtFunc, others ...FmtFunc) FmtFunc {
 	stringFF := identFunc
 	zeroFF := pos
