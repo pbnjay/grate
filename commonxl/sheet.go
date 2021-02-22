@@ -55,7 +55,7 @@ func (s *Sheet) Put(row, col int, value interface{}, fmtNum uint16) {
 	if !ok || fmtNum == 0 {
 		s.Rows[row][col] = NewCell(value)
 	} else {
-		s.Rows[row][col] = NewCellWithType(value, ct)
+		s.Rows[row][col] = NewCellWithType(value, ct, s.Formatter)
 	}
 	s.Rows[row][col].SetFormatNumber(fmtNum)
 }
@@ -106,6 +106,17 @@ func (s *Sheet) Strings() []string {
 			fs = fmt.Sprint(val)
 		}
 		res[i] = fs
+	}
+	return res
+}
+
+// Types extracts the data types from the current record into a list.
+// options: "boolean", "integer", "float", "string", "date",
+// and special cases: "blank", "hyperlink" which are string types
+func (s *Sheet) Types() []string {
+	res := make([]string, s.NumCols)
+	for i, cell := range s.Rows[s.CurRow] {
+		res[i] = cell.Type().String()
 	}
 	return res
 }

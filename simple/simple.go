@@ -44,6 +44,21 @@ func (t *simpleFile) Strings() []string {
 	return t.rows[t.iterRow]
 }
 
+// Types extracts the data types from the current record into a list.
+// options: "boolean", "integer", "float", "string", "date",
+// and special cases: "blank", "hyperlink" which are string types
+func (t *simpleFile) Types() []string {
+	res := make([]string, len(t.rows[t.iterRow]))
+	for i, v := range t.rows[t.iterRow] {
+		if v == "" {
+			res[i] = "blank"
+		} else {
+			res[i] = "string"
+		}
+	}
+	return res
+}
+
 // Scan extracts values from the current record into the provided arguments
 // Arguments must be pointers to one of 5 supported types:
 //     bool, int, float64, string, or time.Time

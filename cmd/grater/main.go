@@ -40,7 +40,9 @@ func main() {
 			}
 
 			for sheet.Next() {
+				//dtypes := sheet.Types()
 				row := sheet.Strings()
+				//fmt.Println(strings.Join(dtypes, "\t"))
 				fmt.Println(strings.Join(row, "\t"))
 			}
 		}

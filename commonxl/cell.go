@@ -25,6 +25,26 @@ const (
 	StaticCell          // placeholder, internal use only
 )
 
+// String returns a string description of the cell data type.
+func (c CellType) String() string {
+	switch c {
+	case BlankCell:
+		return "blank"
+	case IntegerCell:
+		return "integer"
+	case FloatCell:
+		return "float"
+	case BooleanCell:
+		return "boolean"
+	case DateCell:
+		return "date"
+	case HyperlinkStringCell:
+		return "hyperlink"
+	default: // StringCell, StaticCell
+		return "string"
+	}
+}
+
 // Cell represents a single cell value.
 type Cell []interface{}
 
@@ -85,7 +105,7 @@ var boolStrings = map[string]bool{
 }
 
 // NewCellWithType creates a new cell value with the given type, coercing as necessary.
-func NewCellWithType(value interface{}, t CellType) Cell {
+func NewCellWithType(value interface{}, t CellType, f *Formatter) Cell {
 	c := NewCell(value)
 	if c[1] == t {
 		// fast path if it was already typed correctly
@@ -154,7 +174,12 @@ func NewCellWithType(value interface{}, t CellType) Cell {
 		c[1] = StringCell
 	}
 	if t == DateCell {
-		/// DO THE MAGIC CONVERSION HERE
+		if c[1] == FloatCell {
+			c[0] = f.ConvertToDate(c[0].(float64))
+		} else if c[1] == IntegerCell {
+			c[0] = f.ConvertToDate(float64(c[0].(int64)))
+		}
+		c[1] = DateCell
 	}
 	return c
 }
