@@ -221,7 +221,7 @@ func (b *WorkBook) parseSheet(s *boundSheet, ss int) (*commonxl.Sheet, error) {
 			if ixfe < len(b.xfs) {
 				fno = b.xfs[ixfe]
 			}
-			if fdata[6] == 0xFF && r.Data[7] == 0xFF {
+			if fdata[6] == 0xFF && fdata[7] == 0xFF {
 				switch fdata[0] {
 				case 0:
 					// string in next record
@@ -244,10 +244,10 @@ func (b *WorkBook) parseSheet(s *boundSheet, ss int) (*commonxl.Sheet, error) {
 				case 3:
 					// blank string
 				default:
-					log.Println("unknown formula value type")
+					log.Printf("unknown formula value type %d", fdata[0])
 				}
 			} else {
-				xnum := binary.LittleEndian.Uint64(r.Data[6:])
+				xnum := binary.LittleEndian.Uint64(fdata[6:])
 				value := math.Float64frombits(xnum)
 				res.Put(int(formulaRow), int(formulaCol), value, fno)
 			}

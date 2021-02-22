@@ -125,7 +125,7 @@ func (d *Document) load(rx io.ReadSeeker) error {
 		if h.MajorVersion != 3 && h.MajorVersion != 4 {
 			return errors.New("ole2: unknown major version")
 		}
-		if h.MinorVersion != 0x3E {
+		if h.MinorVersion != 0x3B && h.MinorVersion != 0x3E {
 			log.Printf("WARNING MinorVersion = 0x%02x NOT 0x3E", h.MinorVersion)
 			//return errors.New("ole2: unknown minor version")
 		}
