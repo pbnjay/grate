@@ -1,0 +1,18 @@
+	Integers	Floats	Fractions	Dates v1		
+One	1	1.234	1/2	"July 11, 2004"	TRUE	
+Two	4	1.2345678	42 1/3	11 Jul 00	TRUE	
+Three	6	1.0	1/5	9-Sep	FALSE	
+Two Words	99	-42.1	-4 1/5	Jun-42	TRUE	
+Three Small Words	123456789	123456789.0	9999 9/10	1-1-01	FALSE	
+This is a longer sentence that fills the cell and overflows	1000000000000	1000000000000.0				
+Some merged cells (tall version)	123456789	7	38 2/15	"July 12, 2004"		
+	5	123456790.234	1/5	22 Aug 00		
+	1000000000001		1111 1/10			
+						
+	Merged columns (single row)					
+						
+	Merged cells again (big box)				custom yes/no bools!	
+A					yes	
+B					no	
+C						
+D						

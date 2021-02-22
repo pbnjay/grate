@@ -7,10 +7,7 @@ import (
 )
 
 var testFiles = []string{
-	"../testdata/test.xls",
-	"../testdata/test2.xls",
-	"../testdata/test3.xls",
-	"../testdata/test4.xls",
+	"../testdata/multi_test.xls",
 	"../testdata/basic.xls",
 	"../testdata/basic2.xls",
 }
@@ -44,42 +41,119 @@ func TestLoading(t *testing.T) {
 	}
 }
 
-func noTestBasic(t *testing.T) {
+func TestBasic(t *testing.T) {
 	trueFile, err := os.ReadFile("../testdata/basic.tsv")
 	if err != nil {
 		t.Skip()
 	}
 	lines := strings.Split(string(trueFile), "\n")
 
-	for _, fn := range testFiles {
-		wb, err := Open(fn)
+	fn := "../testdata/basic.xls"
+	wb, err := Open(fn)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sheets, err := wb.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range sheets {
+		sheet, err := wb.Get(s)
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		sheets, err := wb.List()
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, s := range sheets {
-			sheet, err := wb.Get(s)
-			if err != nil {
-				t.Fatal(err)
+		i := 0
+		for sheet.Next() {
+			row := strings.Join(sheet.Strings(), "\t")
+			if lines[i] != row {
+				t.Fatalf("line %d mismatch: '%s' <> '%s'", i, row, lines[i])
 			}
-
-			i := 0
-			for sheet.Next() {
-				row := strings.Join(sheet.Strings(), "\t")
-				if lines[i] != row {
-					t.Fatalf("line %d mismatch: '%s' <> '%s'", i, row, lines[i])
-				}
-				i++
-			}
+			i++
 		}
+	}
 
-		err = wb.Close()
+	err = wb.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBasic2(t *testing.T) {
+	trueFile, err := os.ReadFile("../testdata/basic2.tsv")
+	if err != nil {
+		t.Skip()
+	}
+	lines := strings.Split(string(trueFile), "\n")
+
+	fn := "../testdata/basic2.xls"
+	wb, err := Open(fn)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sheets, err := wb.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range sheets {
+		sheet, err := wb.Get(s)
 		if err != nil {
 			t.Fatal(err)
 		}
+
+		i := 0
+		for sheet.Next() {
+			row := strings.Join(sheet.Strings(), "\t")
+			if lines[i] != row {
+				t.Fatalf("line %d mismatch: '%s' <> '%s'", i, row, lines[i])
+			}
+			i++
+		}
+	}
+
+	err = wb.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestMulti(t *testing.T) {
+	trueFile, err := os.ReadFile("../testdata/multi_test.tsv")
+	if err != nil {
+		t.Skip()
+	}
+	lines := strings.Split(string(trueFile), "\n")
+
+	fn := "../testdata/multi_test.xls"
+	wb, err := Open(fn)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sheets, err := wb.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range sheets {
+		sheet, err := wb.Get(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		i := 0
+		for sheet.Next() {
+			row := strings.Join(sheet.Strings(), "\t")
+			if lines[i] != row {
+				t.Fatalf("line %d mismatch: '%s' <> '%s'", i, row, lines[i])
+			}
+			i++
+		}
+	}
+
+	err = wb.Close()
+	if err != nil {
+		t.Fatal(err)
 	}
 }
