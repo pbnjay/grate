@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"time"
+
+	"github.com/pbnjay/grate"
 )
 
 // Sheet holds raw and rendered values for a spreadsheet.
@@ -19,10 +21,6 @@ type Sheet struct {
 // Resize the sheet for the number of rows and cols given.
 // Newly added cells default to blank.
 func (s *Sheet) Resize(rows, cols int) {
-	// some sheets are off by one
-	rows++
-	cols++
-
 	if rows <= 0 {
 		rows = 1
 	}
@@ -37,7 +35,7 @@ func (s *Sheet) Resize(rows, cols int) {
 		s.Rows = append(s.Rows, make([]Cell, cols))
 	}
 
-	for i := 0; len(s.Rows[i]) < cols; i++ {
+	for i := 0; i < s.NumRows && len(s.Rows[i]) < cols; i++ {
 		r2 := make([]Cell, cols-len(s.Rows[i]))
 		s.Rows[i] = append(s.Rows[i], r2...)
 	}
@@ -45,10 +43,22 @@ func (s *Sheet) Resize(rows, cols int) {
 
 // Put the value at the cell location given.
 func (s *Sheet) Put(row, col int, value interface{}, fmtNum uint16) {
+	log.Println(row, col, value, fmtNum)
 	if row >= s.NumRows || col >= s.NumCols {
-		log.Printf("grate: cell out of bounds row %d>=%d, col %d>=%d",
-			row, s.NumRows, col, s.NumCols)
-		return
+		if grate.Debug {
+			log.Printf("grate: cell out of bounds row %d>=%d, col %d>=%d",
+				row, s.NumRows, col, s.NumCols)
+		}
+
+		// per the spec, this is an invalid Excel file
+		// but we'll resize in place instead of crashing out
+		if row >= s.NumRows {
+			s.NumRows = row + 1
+		}
+		if col >= s.NumCols {
+			s.NumCols = col + 1
+		}
+		s.Resize(s.NumRows, s.NumCols)
 	}
 
 	ct, ok := s.Formatter.getCellType(fmtNum)
