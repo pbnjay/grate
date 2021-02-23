@@ -68,7 +68,7 @@ func refToIndexes(r string) (column, row int) {
 	i2 := strings.IndexByte(r[i1:], 'C')
 	if i2 == -1 {
 		rn, _ := strconv.ParseInt(r[i1:], 10, 64)
-		return col2int(col1), int(rn)
+		return col2int(col1), int(rn) - 1
 	}
 
 	// R1C1 Reference Mode
@@ -76,7 +76,7 @@ func refToIndexes(r string) (column, row int) {
 	row1 := r[i2+1:]
 	cn, _ := strconv.ParseInt(col1, 10, 64)
 	rn, _ := strconv.ParseInt(row1, 10, 64)
-	return int(cn), int(rn)
+	return int(cn), int(rn) - 1
 }
 
 func getAttrs(attrs []xml.Attr, keys ...string) []string {

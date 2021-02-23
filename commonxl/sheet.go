@@ -85,7 +85,7 @@ func (s *Sheet) SetURL(row, col int, link string) {
 // Next advances to the next record of content.
 // It MUST be called prior to any Scan().
 func (s *Sheet) Next() bool {
-	if (s.CurRow + 1) >= len(s.Rows) {
+	if (s.CurRow + 1) > len(s.Rows) {
 		return false
 	}
 	s.CurRow++
@@ -95,7 +95,7 @@ func (s *Sheet) Next() bool {
 // Strings extracts values from the current record into a list of strings.
 func (s *Sheet) Strings() []string {
 	res := make([]string, s.NumCols)
-	for i, cell := range s.Rows[s.CurRow] {
+	for i, cell := range s.Rows[s.CurRow-1] {
 		if cell.Type() == BlankCell {
 			res[i] = ""
 			continue
@@ -115,7 +115,7 @@ func (s *Sheet) Strings() []string {
 // and special cases: "blank", "hyperlink" which are string types
 func (s *Sheet) Types() []string {
 	res := make([]string, s.NumCols)
-	for i, cell := range s.Rows[s.CurRow] {
+	for i, cell := range s.Rows[s.CurRow-1] {
 		res[i] = cell.Type().String()
 	}
 	return res
@@ -126,7 +126,7 @@ func (s *Sheet) Types() []string {
 //     bool, int64, float64, string, or time.Time
 // If invalid, returns ErrInvalidScanType
 func (s *Sheet) Scan(args ...interface{}) error {
-	row := s.Rows[s.CurRow]
+	row := s.Rows[s.CurRow-1]
 
 	for i, a := range args {
 		val := row[i].Value()
