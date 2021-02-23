@@ -282,15 +282,16 @@ var builtInFormats = map[uint16]string{
 	57: `yyyy"年"m"月"`,
 	58: `m"月"d"日"`,
 
-	// th-th format codes
-	59: `t0`,
-	60: `t0.00`,
-	61: `t#,##0`,
-	62: `t#,##0.00`,
-	67: `t0%`,
-	68: `t0.00%`,
-	69: `t# ?/?`,
-	70: `t# ??/??`,
+	// th-th format codes (in the spec these have a "t" prefix?)
+	59: `0`,
+	60: `0.00`,
+	61: `#,##0`,
+	62: `#,##0.00`,
+	67: `0%`,
+	68: `0.00%`,
+	69: `# ?/?`,
+	70: `# ??/??`,
+
 	// th format code, but translated to aid the parser
 	71: `d/m/yyyy`,      // `ว/ด/ปปปป`,
 	72: `d-mmm-yy`,      // `ว-ดดด-ปป`,

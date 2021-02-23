@@ -149,6 +149,12 @@ func fracFmtFunc(n int) FmtFunc {
 		if n == 0 {
 			return fmt.Sprintf("%d", w)
 		}
+		if w == 0 {
+			if f < 0 && n > 0 {
+				n = -n
+			}
+			return fmt.Sprintf("%d/%d", n, d)
+		}
 		return fmt.Sprintf("%d %d/%d", w, n, d)
 	}
 }
@@ -235,26 +241,26 @@ var goFormatters = map[uint16]FmtFunc{
 	12: fracFmtFunc(1),
 	13: fracFmtFunc(2),
 
-	69: surround("t", fracFmtFunc(1), ""),
-	70: surround("t", fracFmtFunc(2), ""),
+	69: fracFmtFunc(1),
+	70: fracFmtFunc(2),
 
 	1:  sprintfFunc(`%d`, 1),
 	2:  sprintfFunc(`%4.2f`, 1),
-	59: sprintfFunc(`t%d`, 1),
-	60: sprintfFunc(`t%4.2f`, 1),
+	59: sprintfFunc(`%d`, 1),
+	60: sprintfFunc(`%4.2f`, 1),
 
 	9:  sprintfFunc(`%d%%`, 100),
 	10: sprintfFunc(`%4.2f%%`, 100),
-	67: sprintfFunc(`t%d%%`, 100),
-	68: sprintfFunc(`t%4.2f%%`, 100),
+	67: sprintfFunc(`%d%%`, 100),
+	68: sprintfFunc(`%4.2f%%`, 100),
 
 	3:  addCommas(sprintfFunc("%d", 1)),
-	61: surround("t", addCommas(sprintfFunc("%d", 1)), ""),
+	61: addCommas(sprintfFunc("%d", 1)),
 	37: addNegParens(addCommas(sprintfFunc("%d", 1))),
 	38: addNegParens(addCommas(sprintfFunc("%d", 1))),
 
 	4:  addCommas(sprintfFunc("%4.2f", 1)),
-	62: surround("t", addCommas(sprintfFunc("%4.2f", 1)), ""),
+	62: addCommas(sprintfFunc("%4.2f", 1)),
 	39: addNegParens(addCommas(sprintfFunc("%4.2f", 1))),
 	40: addNegParens(addCommas(sprintfFunc("%4.2f", 1))),
 
