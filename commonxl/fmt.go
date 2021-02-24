@@ -55,8 +55,30 @@ func addCommas(ff FmtFunc) FmtFunc {
 }
 
 func identFunc(x *Formatter, v interface{}) string {
-	if s, ok := v.(string); ok {
-		return s
+	switch x := v.(type) {
+	case bool:
+		if x {
+			return "TRUE"
+		}
+		return "FALSE"
+	case int64:
+		s := strconv.FormatInt(x, 10)
+		if len(s) <= 11 {
+			return s
+		}
+	case float64:
+		s := strconv.FormatFloat(x, 'f', -1, 64)
+		if len(s) <= 11 || (len(s) == 12 && x < 0) {
+			return s
+		}
+		s = strconv.FormatFloat(x, 'g', 6, 64)
+		if len(s) <= 11 {
+			return s
+		}
+	case string:
+		return x
+	case fmt.Stringer:
+		return x.String()
 	}
 	return fmt.Sprint(v)
 }
