@@ -34,6 +34,9 @@ type Collection interface {
 	// and special cases: "blank", "hyperlink" which are string types
 	Types() []string
 
+	// Formats extracts the format codes for the current record into a list.
+	Formats() []string
+
 	// Scan extracts values from the current record into the provided arguments
 	// Arguments must be pointers to one of 5 supported types:
 	//     bool, int64, float64, string, or time.Time

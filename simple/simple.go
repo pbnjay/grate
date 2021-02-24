@@ -44,6 +44,15 @@ func (t *simpleFile) Strings() []string {
 	return t.rows[t.iterRow]
 }
 
+// Formats extracts the format code for the current record into a list.
+func (t *simpleFile) Formats() []string {
+	res := make([]string, len(t.rows[t.iterRow]))
+	for i := range res {
+		res[i] = "General"
+	}
+	return res
+}
+
 // Types extracts the data types from the current record into a list.
 // options: "boolean", "integer", "float", "string", "date",
 // and special cases: "blank", "hyperlink" which are string types

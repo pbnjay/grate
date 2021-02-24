@@ -131,6 +131,19 @@ func (s *Sheet) Types() []string {
 	return res
 }
 
+// Formats extracts the format code for the current record into a list.
+func (s *Sheet) Formats() []string {
+	ok := true
+	res := make([]string, s.NumCols)
+	for i, cell := range s.Rows[s.CurRow-1] {
+		res[i], ok = builtInFormats[cell.FormatNo()]
+		if !ok {
+			res[i] = fmt.Sprint(cell.FormatNo())
+		}
+	}
+	return res
+}
+
 // Scan extracts values from the current record into the provided arguments
 // Arguments must be pointers to one of 5 supported types:
 //     bool, int64, float64, string, or time.Time
