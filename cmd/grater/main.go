@@ -2,6 +2,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"strings"
@@ -13,12 +14,15 @@ import (
 )
 
 func main() {
-	if len(os.Args) == 1 {
+	flagDebug := flag.Bool("v", false, "debug log")
+	flag.Parse()
+	if flag.NArg() < 1 {
 		fmt.Fprintf(os.Stderr, "USAGE: %s [file1.xls file2.xlsx file3.tsv ...]\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "       Extracts contents of the tabular files to stdout\n")
 		os.Exit(1)
 	}
-	for _, fn := range os.Args[1:] {
+	grate.Debug = *flagDebug
+	for _, fn := range flag.Args() {
 		wb, err := grate.Open(fn)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
