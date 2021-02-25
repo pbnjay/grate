@@ -44,9 +44,11 @@ func main() {
 			}
 
 			for sheet.Next() {
-				//dtypes := sheet.Types()
+				if *flagDebug {
+					dtypes := sheet.Types()
+					fmt.Println(strings.Join(dtypes, "\t"))
+				}
 				row := sheet.Strings()
-				//fmt.Println(strings.Join(dtypes, "\t"))
 				fmt.Println(strings.Join(row, "\t"))
 			}
 		}
