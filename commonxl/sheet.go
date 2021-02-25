@@ -21,6 +21,17 @@ type Sheet struct {
 // Resize the sheet for the number of rows and cols given.
 // Newly added cells default to blank.
 func (s *Sheet) Resize(rows, cols int) {
+	for i := range s.Rows {
+		if i > rows {
+			break
+		}
+		n := cols - len(s.Rows[i])
+		if n <= 0 {
+			continue
+		}
+		s.Rows[i] = append(s.Rows[i], make([]Cell, n)...)
+	}
+
 	if rows <= 0 {
 		rows = 1
 	}
@@ -33,11 +44,6 @@ func (s *Sheet) Resize(rows, cols int) {
 
 	for rows >= len(s.Rows) {
 		s.Rows = append(s.Rows, make([]Cell, cols))
-	}
-
-	for i := 0; i < s.NumRows && len(s.Rows[i]) < cols; i++ {
-		r2 := make([]Cell, cols-len(s.Rows[i]))
-		s.Rows[i] = append(s.Rows[i], r2...)
 	}
 }
 
