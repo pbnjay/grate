@@ -49,7 +49,7 @@ func (s *Sheet) Resize(rows, cols int) {
 
 // Put the value at the cell location given.
 func (s *Sheet) Put(row, col int, value interface{}, fmtNum uint16) {
-	log.Println(row, col, value, fmtNum)
+	//log.Println(row, col, value, fmtNum)
 	if row >= s.NumRows || col >= s.NumCols {
 		if grate.Debug {
 			log.Printf("grate: cell out of bounds row %d>=%d, col %d>=%d",
