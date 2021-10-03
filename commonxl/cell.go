@@ -217,7 +217,7 @@ func NewCell(value interface{}) Cell {
 		c[1] = IntegerCell
 
 	case uint:
-		if v > math.MaxInt64 {
+		if int64(v) > int64(math.MaxInt64) {
 			c[0] = float64(v)
 			c[1] = FloatCell
 		} else {
