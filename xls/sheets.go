@@ -163,7 +163,7 @@ func (b *WorkBook) parseSheet(s *boundSheet, ss int) (*commonxl.Sheet, error) {
 			for i := 0; i < nrk; i++ {
 				off := 4 + i*6
 				ixfe := int(binary.LittleEndian.Uint16(r.Data[off:]))
-				value := RKNumber(binary.LittleEndian.Uint32(r.Data[off:]))
+				value := RKNumber(binary.LittleEndian.Uint32(r.Data[off+2:]))
 
 				var rval interface{}
 				if value.IsInteger() {
