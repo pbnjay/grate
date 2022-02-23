@@ -21,5 +21,11 @@ jobs:
     - name: Build
       run: go build -v ./...
 
-    - name: Test
-      run: go test -v ./...
+    - name: Test XLS
+      run: go test -v ./xls
+
+    - name: Test XLSX
+      run: go test -v ./xlsx
+
+    - name: Test CommonXL
+      run: go test -v ./commonxl
