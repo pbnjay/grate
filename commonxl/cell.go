@@ -95,6 +95,15 @@ func (c Cell) FormatNo() uint16 {
 	return 0
 }
 
+// Clone returns the new copy of this Cell.
+func (c Cell) Clone() Cell {
+	c2 := make([]interface{}, len(c))
+	for i, x := range c {
+		c2[i] = x
+	}
+	return c2
+}
+
 ///////
 
 var boolStrings = map[string]bool{
@@ -303,4 +312,150 @@ func (c *Cell) SetFormatNumber(f uint16) {
 	} else {
 		(*c)[2] = f
 	}
+}
+
+func (c Cell) Equal(other Cell) bool {
+	if c.Type() == FloatCell || other.Type() == FloatCell ||
+		c.Type() == IntegerCell || other.Type() == IntegerCell {
+		v1, ok := c[0].(float64)
+		v1x, okx := c[0].(int64)
+		if okx {
+			v1 = float64(v1x)
+			ok = true
+		}
+		if !ok {
+			fmt.Sscanf(fmt.Sprint(c[0]), "%g", &v1)
+		}
+		v2, ok := other[0].(float64)
+		v2x, okx := other[0].(int64)
+		if okx {
+			v2 = float64(v2x)
+			ok = true
+		}
+		if !ok {
+			fmt.Sscanf(fmt.Sprint(c[0]), "%g", &v2)
+		}
+		return v1 == v2
+	}
+
+	return c.Less(other) == other.Less(c)
+}
+
+func (c Cell) Less(other Cell) bool {
+	if len(c) == 0 {
+		return false
+	}
+	switch v1 := c[0].(type) {
+	case nil:
+		return false
+	case bool:
+		// F < T = T
+		// F < F = F
+		// T < T = F
+		// T < F = F
+		if v1 {
+			return false
+		}
+
+		// if v2 is truthy, return true
+		switch v2 := other[0].(type) {
+		case nil:
+			return false
+		case bool:
+			return v2
+		case int64:
+			return v2 != 0
+		case float64:
+			return v2 != 0.0
+		case string:
+			return boolStrings[v2]
+		}
+
+	case int64:
+		// v1 < v2
+
+		switch v2 := other[0].(type) {
+		case nil:
+			return false
+		case bool:
+			x := int64(0)
+			if v2 {
+				x = 1
+			}
+			return v1 < x
+		case int64:
+			return v1 < v2
+		case float64:
+			if v2 < math.MinInt64 {
+				return false
+			}
+			if v2 > math.MaxInt64 {
+				return true
+			}
+			return float64(v1) < v2
+		case string:
+			var x int64
+			_, err := fmt.Sscanf(v2, "%d", &x)
+			if err == nil {
+				return v1 < x
+			}
+			return fmt.Sprint(v1) < v2
+		}
+	case float64:
+		switch v2 := other[0].(type) {
+		case nil:
+			return false
+		case bool:
+			x := float64(0.0)
+			if v2 {
+				x = 1.0
+			}
+			return v1 < x
+		case int64:
+			if v1 < math.MinInt64 {
+				return true
+			}
+			if v1 > math.MaxInt64 {
+				return false
+			}
+			return v1 < float64(v2)
+		case float64:
+			return v1 < v2
+		case string:
+			var x float64
+			_, err := fmt.Sscanf(v2, "%g", &x)
+			if err == nil {
+				return v1 < x
+			}
+			return fmt.Sprint(v1) < v2
+		}
+	case string:
+		//return v1 < fmt.Sprint(other[0])
+
+		switch v2 := other[0].(type) {
+		case nil:
+			return false
+		case bool:
+			return v2 && !boolStrings[v1]
+		case int64:
+			var x int64
+			_, err := fmt.Sscanf(v1, "%d", &x)
+			if err == nil {
+				return x < v2
+			}
+			return v1 < fmt.Sprint(v2)
+		case float64:
+			var x float64
+			_, err := fmt.Sscanf(v1, "%g", &x)
+			if err == nil {
+				return x < v2
+			}
+			return v1 < fmt.Sprint(v2)
+		case string:
+			return v1 < v2
+		}
+
+	}
+
+	panic("unable to compare cells (invalid internal type)")
 }

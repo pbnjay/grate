@@ -108,6 +108,15 @@ func (s *Sheet) Next() bool {
 	return true
 }
 
+// Raw extracts the raw Cell interfaces underlying the current row.
+func (s *Sheet) Raw() []Cell {
+	rr := make([]Cell, s.NumCols)
+	for i, cell := range s.Rows[s.CurRow-1] {
+		rr[i] = cell.Clone()
+	}
+	return rr
+}
+
 // Strings extracts values from the current record into a list of strings.
 func (s *Sheet) Strings() []string {
 	res := make([]string, s.NumCols)

@@ -210,7 +210,7 @@ func (b *WorkBook) parseSheet(s *boundSheet, ss int) (*commonxl.Sheet, error) {
 				fno = b.xfs[ixfe]
 			}
 			res.Put(rowIndex, colIndex, rval, fno)
-			//log.Printf("RK spec: %d %d = %s", rowIndex, colIndex, rr.Value.String())
+			//log.Printf("RK spec: %d %d = %+v", rowIndex, colIndex, rval)
 
 		case RecTypeFormula:
 			formulaRow = binary.LittleEndian.Uint16(r.Data[:2])
@@ -302,6 +302,7 @@ func (b *WorkBook) parseSheet(s *boundSheet, ss int) (*commonxl.Sheet, error) {
 				}
 			}
 			res.Set(int(formulaRow), int(formulaCol), fstr)
+			//log.Printf("String direct: %d %d '%s'", int(formulaRow), int(formulaCol), fstr)
 
 		case RecTypeLabelSst:
 			rowIndex := int(binary.LittleEndian.Uint16(r.Data[:2]))
@@ -318,7 +319,7 @@ func (b *WorkBook) parseSheet(s *boundSheet, ss int) (*commonxl.Sheet, error) {
 			if b.strings[sstIndex] != "" {
 				res.Put(rowIndex, colIndex, b.strings[sstIndex], fno)
 			}
-			//log.Printf("SST spec: %d %d = [%d] %s", rowIndex, colIndex, sstIndex, s.b.strings[sstIndex])
+			//log.Printf("SST spec: %d %d = [%d] '%s' %d", rowIndex, colIndex, sstIndex, b.strings[sstIndex], fno)
 
 		case RecTypeHLink:
 			firstRow := binary.LittleEndian.Uint16(r.Data[:2])

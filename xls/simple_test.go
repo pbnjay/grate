@@ -1,20 +1,53 @@
 package xls
 
 import (
+	"bufio"
+	"log"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/pbnjay/grate/commonxl"
 )
 
-var testFiles = []string{
-	"../testdata/multi_test.xls",
-	"../testdata/basic.xls",
-	"../testdata/basic2.xls",
+var testFilePairs = [][]string{
+	{"../testdata/basic.xls", "../testdata/basic.tsv"},
+	{"../testdata/testing.xls", "../testdata/testing.tsv"},
+
+	// TODO: custom formatter support
+	//{"../testdata/basic2.xls", "../testdata/basic2.tsv"},
+
+	// TODO: datetime and fraction formatter support
+	//{"../testdata/multi_test.xls", "../testdata/multi_test.tsv"},
 }
 
-func TestLoading(t *testing.T) {
-	for _, fn := range testFiles {
-		wb, err := Open(fn)
+func loadTestData(fn string, ff *commonxl.Formatter) (*commonxl.Sheet, error) {
+	f, err := os.Open(fn)
+	if err != nil {
+		return nil, err
+	}
+	xs := &commonxl.Sheet{
+		Formatter: ff,
+	}
+
+	row := 0
+	s := bufio.NewScanner(f)
+	for s.Scan() {
+		record := strings.Split(s.Text(), "\t")
+		for i, val := range record {
+			xs.Put(row, i, val, 0)
+		}
+		row++
+	}
+	return xs, f.Close()
+}
+
+func TestBasic(t *testing.T) {
+	for _, fnames := range testFilePairs {
+		var trueData *commonxl.Sheet
+		log.Println("Testing ", fnames[0])
+
+		wb, err := Open(fnames[0])
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -23,14 +56,30 @@ func TestLoading(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		firstLoad := true
 		for _, s := range sheets {
 			sheet, err := wb.Get(s)
 			if err != nil {
 				t.Fatal(err)
 			}
+			xsheet := sheet.(*commonxl.Sheet)
+			if firstLoad {
+				trueData, err = loadTestData(fnames[1], xsheet.Formatter)
+				if err != nil {
+					t.Fatal(err)
+				}
+				firstLoad = false
+			}
 
-			for sheet.Next() {
-				sheet.Strings()
+			for xrow, xdata := range xsheet.Rows {
+				for xcol, xval := range xdata {
+					//t.Logf("at %s (%d,%d) expect '%v'", fnames[0], xrow, xcol, trueData.Rows[xrow][xcol])
+					if !trueData.Rows[xrow][xcol].Equal(xval) {
+						t.Logf("mismatch at %s (%d,%d): '%v' <> '%v' expected", fnames[0], xrow, xcol,
+							xval, trueData.Rows[xrow][xcol])
+						t.Fail()
+					}
+				}
 			}
 		}
 
@@ -38,122 +87,5 @@ func TestLoading(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-	}
-}
-
-func TestBasic(t *testing.T) {
-	trueFile, err := os.ReadFile("../testdata/basic.tsv")
-	if err != nil {
-		t.Skip()
-	}
-	lines := strings.Split(string(trueFile), "\n")
-
-	fn := "../testdata/basic.xls"
-	wb, err := Open(fn)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	sheets, err := wb.List()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, s := range sheets {
-		sheet, err := wb.Get(s)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		i := 0
-		for sheet.Next() {
-			row := strings.Join(sheet.Strings(), "\t")
-			if lines[i] != row {
-				t.Fatalf("line %d mismatch: '%s' <> '%s'", i, row, lines[i])
-			}
-			i++
-		}
-	}
-
-	err = wb.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestBasic2(t *testing.T) {
-	trueFile, err := os.ReadFile("../testdata/basic2.tsv")
-	if err != nil {
-		t.Skip()
-	}
-	lines := strings.Split(string(trueFile), "\n")
-
-	fn := "../testdata/basic2.xls"
-	wb, err := Open(fn)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	sheets, err := wb.List()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, s := range sheets {
-		sheet, err := wb.Get(s)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		i := 0
-		for sheet.Next() {
-			row := strings.Join(sheet.Strings(), "\t")
-			if lines[i] != row {
-				t.Fatalf("line %d mismatch: '%s' <> '%s'", i, row, lines[i])
-			}
-			i++
-		}
-	}
-
-	err = wb.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestMulti(t *testing.T) {
-	trueFile, err := os.ReadFile("../testdata/multi_test.tsv")
-	if err != nil {
-		t.Skip()
-	}
-	lines := strings.Split(string(trueFile), "\n")
-
-	fn := "../testdata/multi_test.xls"
-	wb, err := Open(fn)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	sheets, err := wb.List()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, s := range sheets {
-		sheet, err := wb.Get(s)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		i := 0
-		for sheet.Next() {
-			row := strings.Join(sheet.Strings(), "\t")
-			if lines[i] != row {
-				t.Fatalf("line %d mismatch: '%s' <> '%s'", i, row, lines[i])
-			}
-			i++
-		}
-	}
-
-	err = wb.Close()
-	if err != nil {
-		t.Fatal(err)
 	}
 }

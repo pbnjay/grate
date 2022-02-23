@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestManyFiles(t *testing.T) {
+func TestAllFiles(t *testing.T) {
 	err := filepath.Walk("../testdata", func(p string, info os.FileInfo, err error) error {
 		if info.IsDir() {
 			return nil
@@ -17,7 +17,7 @@ func TestManyFiles(t *testing.T) {
 		}
 		wb, err := Open(p)
 		if err != nil {
-			return nil //err
+			return err
 		}
 
 		sheets, err := wb.List()
@@ -25,7 +25,6 @@ func TestManyFiles(t *testing.T) {
 			return err
 		}
 		for _, s := range sheets {
-			//log.Println(s)
 			sheet, err := wb.Get(s)
 			if err != nil {
 				return err
