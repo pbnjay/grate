@@ -40,6 +40,8 @@ func (c CellType) String() string {
 		return "date"
 	case HyperlinkStringCell:
 		return "hyperlink"
+	case StaticCell:
+		return "static"
 	default: // StringCell, StaticCell
 		return "string"
 	}

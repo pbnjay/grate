@@ -67,6 +67,14 @@ func (s *Sheet) Put(row, col int, value interface{}, fmtNum uint16) {
 		s.Resize(s.NumRows, s.NumCols)
 	}
 
+	if spec, ok := value.(string); ok {
+		if spec == grate.EndRowMerged || spec == grate.EndColumnMerged || spec == grate.ContinueRowMerged || spec == grate.ContinueColumnMerged {
+			s.Rows[row][col] = NewCell(value)
+			s.Rows[row][col][1] = StaticCell
+			return
+		}
+	}
+
 	ct, ok := s.Formatter.getCellType(fmtNum)
 	if !ok || fmtNum == 0 {
 		s.Rows[row][col] = NewCell(value)
@@ -123,6 +131,10 @@ func (s *Sheet) Strings() []string {
 	for i, cell := range s.Rows[s.CurRow-1] {
 		if cell.Type() == BlankCell {
 			res[i] = ""
+			continue
+		}
+		if cell.Type() == StaticCell {
+			res[i] = cell.Value().(string)
 			continue
 		}
 		val := cell.Value()

@@ -386,10 +386,10 @@ func (b *WorkBook) parseSheet(s *boundSheet, ss int) (*commonxl.Sheet, error) {
 			cmcs := binary.LittleEndian.Uint16(r.Data[:2])
 			raw := r.Data[2:]
 			for i := 0; i < int(cmcs); i++ {
-				firstRow := binary.LittleEndian.Uint16(r.Data[:2])
-				lastRow := binary.LittleEndian.Uint16(r.Data[2:4])
-				firstCol := binary.LittleEndian.Uint16(r.Data[4:6])
-				lastCol := binary.LittleEndian.Uint16(r.Data[6:])
+				firstRow := binary.LittleEndian.Uint16(raw[:2])
+				lastRow := binary.LittleEndian.Uint16(raw[2:4])
+				firstCol := binary.LittleEndian.Uint16(raw[4:6])
+				lastCol := binary.LittleEndian.Uint16(raw[6:])
 				raw = raw[8:]
 
 				if lastRow == 0xFFFF { // placeholder value indicate "last"
