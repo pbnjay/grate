@@ -7,6 +7,7 @@ import (
 	"log"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/pbnjay/grate"
 )
@@ -27,7 +28,12 @@ func (d *Document) parseRels(dec *xml.Decoder, basedir string) error {
 				if _, ok := d.rels[vals["Type"]]; !ok {
 					d.rels[vals["Type"]] = make(map[string]string)
 				}
-				d.rels[vals["Type"]][vals["Id"]] = filepath.Join(basedir, vals["Target"])
+				if strings.HasPrefix(vals["Target"], "/") {
+					// handle malformed "absolute" paths cleanly
+					d.rels[vals["Type"]][vals["Id"]] = vals["Target"][1:]
+				} else {
+					d.rels[vals["Type"]][vals["Id"]] = filepath.Join(basedir, vals["Target"])
+				}
 				if vals["Type"] == "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" {
 					d.primaryDoc = vals["Target"]
 				}
