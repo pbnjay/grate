@@ -118,6 +118,7 @@ func Open(filename string) (grate.Source, error) {
 	ssn := d.rels["http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings"]
 	for _, sst := range ssn {
 		// parse the shared string table
+		sst = strings.Replace(sst, "xl/xl/", "xl/", 1)
 		dec, c, err = d.openXML(sst)
 		if err != nil {
 			return nil, err
