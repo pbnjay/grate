@@ -4,7 +4,9 @@ package grate
 
 import (
 	"errors"
+	"io"
 	"log"
+	"os"
 	"sort"
 )
 
@@ -69,6 +71,17 @@ func Open(filename string) (Source, error) {
 		}
 	}
 	return nil, ErrUnknownFormat
+}
+
+func OpenReader(r io.Reader) (Source, error) {
+	f, err := os.CreateTemp("", "grate")
+	if err != nil {
+		return nil, err
+	}
+	if _, err := io.Copy(f, r); err != nil {
+		return nil, err
+	}
+	return Open(f.Name())
 }
 
 type srcOpenTab struct {
