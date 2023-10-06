@@ -247,7 +247,7 @@ func (b *WorkBook) parseSheet(s *boundSheet, ss int) (*commonxl.Sheet, error) {
 					log.Printf("unknown formula value type %d", fdata[0])
 				}
 			} else {
-				xnum := binary.LittleEndian.Uint64(fdata[6:])
+				xnum := binary.LittleEndian.Uint64(fdata)
 				value := math.Float64frombits(xnum)
 				res.Put(int(formulaRow), int(formulaCol), value, fno)
 			}
