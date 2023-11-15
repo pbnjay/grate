@@ -27,7 +27,7 @@ type boundSheet struct {
 	Name        string
 }
 
-///////
+// /////
 type shRow struct {
 	RowIndex uint16 // 0-based
 	FirstCol uint16 // 0-based
@@ -88,6 +88,12 @@ func (r RKNumber) Int() int {
 
 func (r RKNumber) Float64() float64 {
 	val := int32(r) >> 2
+
+	// Value is saved as integer multiplied by 100
+	if (r&1) != 0 && (r&2) != 0 {
+		return float64(val) / 100.0
+	}
+
 	v2 := math.Float64frombits(uint64(val) << 34)
 
 	if (r&1) == 0 && (r&2) == 0 {
