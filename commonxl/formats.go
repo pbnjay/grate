@@ -64,7 +64,7 @@ func (x *Formatter) getCellType(fmtID uint16) (CellType, bool) {
 }
 
 var (
-	minsMatch = regexp.MustCompile("h.*m.*s")
+	minsMatch = regexp.MustCompile("h.*m.*s*")
 	nonEsc    = regexp.MustCompile(`([^"]|^)"`)
 	squash    = regexp.MustCompile(`[*_].`)
 	fixEsc    = regexp.MustCompile(`\\(.)`)

@@ -139,3 +139,18 @@ func TestBoolFormats(t *testing.T) {
 		t.Fatal(`-99.0 should be "yes"`)
 	}
 }
+
+func TestTimeFormats(t *testing.T) {
+	formatter := Formatter{}
+	formatter.Add(165, "hh:mm")
+
+	testTime := time.Date(2014, 3, 27, 9, 37, 0, 0, time.UTC)
+	val, ok := formatter.Apply(165, testTime)
+	if ok != true {
+		t.Fatal("Could not format time")
+	}
+
+	if val != "09:37" {
+		t.Fatal("Time should be 09:37, but was", val)
+	}
+}
